@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Presentation: {{ page.title }} - Jared Burrows</title>
+    <link rel="stylesheet" href="https://netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css" type="text/css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Merriweather+Sans:400,300,700" type="text/css">
+    <link rel="stylesheet" href="/static/css/app.css" type="text/css">
+    <link rel="stylesheet" href="/static/css/syntax.css" type="text/css">
+    {% feed_meta %}
+    <meta name="theme-color" content="#111111">
+
+    <meta name="og:type" content="article">
+    <meta name="og:updated_time" content="{{ page.date | date: "%Y-%m-%d" }}">
+    <meta name="og:title" content="Presentation: {{ page.title }}">
+    <meta name="og:description" content="{{ content | strip_html | escape_once }}">
+    <meta name="og:site_name" content="Jared Burrows">
+    <meta name="og:url" content="{{ site.url }}{{ page.url }}">
+    {% if page.youtube %}
+    <meta name="og:image" content="http://img.youtube.com/vi/{{ page.youtube }}/maxresdefault.jpg">
+    {% elsif page.speakerdeck %}
+    <meta name="og:image" content="https://speakerd.s3.amazonaws.com/presentations/{{ page.speakerdeck }}/slide_0.jpg">
+    {% endif %}
+
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:site" content="@jaredsburrows">
+    <meta name="twitter:domain" content="jaredsburrows.com">
+    <meta name="twitter:title" content="Presentation: {{ page.title }}">
+    <meta name="twitter:description" content="{{ content | strip_html | escape_once }}">
+    {% if page.youtube %}
+    <meta name="twitter:image" content="http://img.youtube.com/vi/{{ page.youtube }}/maxresdefault.jpg">
+    {% elsif page.speakerdeck %}
+    <meta name="twitter:image" content="https://speakerd.s3.amazonaws.com/presentations/{{ page.speakerdeck }}/slide_0.jpg">
+    {% endif %}
+    <meta name="twitter:url" content="{{ site.url }}{{ page.url }}">
+    <meta name="twitter:label1" content="Event">
+    <meta name="twitter:data1" content="{{ page.event }} ({{ page.location }})">
+    <meta name="twitter:label2" content="Date">
+    <meta name="twitter:data2" content="{{ page.date | date:"%d %B %Y" }}">
+  </head>
+  <body>
+    <header>
+      <h1><a href="/">Jared Burrows</a></h1>
+    </header>
+
+    <div class="content presentation">
+      <h2>{{ page.title }}</h2>
+      <p class="date">{{ page.date | date:"%d %B %Y" }} &ndash; {% if page.homepage %}<a href="{{ page.homepage }}">{% endif %}{{ page.event }} ({{ page.location }}){% if page.homepage %}</a>{% endif %}</p>
+
+      <section class="description">
+        {{ content }}
+      </section>
+
+      {% if page.video %}
+      <section class="video">
+        <p>Video available at <a href="{{ page.video }}">{{ page.video }}</a>.</p>
+      </section>
+      {% endif %}
+      {% if page.youtube %}
+      <section class="youtube">
+        <iframe src="https://www.youtube.com/embed/{{ page.youtube }}" frameborder="0" allowfullscreen></iframe>
+      </section>
+      {% endif %}
+      {% if page.parleys %}
+      <section class="parleys">
+        <div data-parleys-presentation="{{ page.parleys }}">
+          <script async type="text/javascript" src="https://parleys.com/js/parleys-share.js"></script>
+        </div>
+      </section>
+      {% endif %}
+      {% if page.vimeo %}
+      <section class="vimeo">
+        <iframe src="https://player.vimeo.com/video/{{ page.vimeo }}" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen></iframe>
+      </section>
+      {% endif %}
+      {% if page.speakerdeck %}
+      <section class="speakerdeck">
+        <script async class="speakerdeck-embed" data-id="{{ page.speakerdeck }}" data-ratio="1.77777777777778" src="https://speakerdeck.com/assets/embed.js"></script>
+      </section>
+      {% endif %}
+    </div>
+    <script>
+        (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+        (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+        m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+        })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+        ga('create', 'UA-83969259-1', 'jaredsburrows.com');
+        ga('send', 'pageview');
+    </script>
+  </body>
+</html>

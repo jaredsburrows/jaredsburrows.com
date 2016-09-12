@@ -1,0 +1,34 @@
+---
+title: Presentations
+layout: default
+---
+
+{% assign sorted_presentations = site.presentations | sort: 'date' | reverse %}
+
+<ul class="presentation-list list-unstyled">
+  {% for presentation in sorted_presentations %}
+  {% if presentation.date > site.time %}
+  <li class="presentation">
+    <span class="date">{{ presentation.date | date: "%Y-%m-%d" }}</span>
+    {% if presentation.homepage %}<a href="{{ presentation.homepage }}">⇖ {% endif %}{{ presentation.title }}{% if presentation.homepage %}</a>{% endif %}
+    <small>{{ presentation.event }} ({{ presentation.location }})</small>
+  </li>
+  {% endif %}
+  {% endfor %}
+</ul>
+<hr>
+<ul class="presentation-list list-unstyled">
+  {% for presentation in sorted_presentations %}
+  {% if presentation.date <= site.time %}
+  <li class="presentation">
+    <span class="date">{{ presentation.date | date: "%Y-%m-%d" }}</span>
+    {% if presentation.nolink %}
+    {{ presentation.title }}
+    {% else %}
+    <a href="{{ presentation.url }}">{{ presentation.title }}</a>
+    {% endif %}
+    <small>{{ presentation.event }} ({{ presentation.location }})</small>
+  </li>
+  {% endif %}
+  {% endfor %}
+</ul>

@@ -1,0 +1,218 @@
+html {
+  height: 100%;
+}
+body {
+  min-height: 100%;
+  font-family: 'Merriweather Sans', sans-serif;
+}
+
+a, a span {
+  -webkit-transition: color .3s ease-in-out;
+  -moz-transition: color .3s ease-in-out;
+  -o-transition: color .3s ease-in-out;
+  transition: color .3s ease-in-out;
+}
+a {
+  color: #48b983;
+}
+a:hover {
+  color: #40a776;
+}
+
+ul, ol {
+  padding-left: 25px;
+}
+
+code {
+  color: #444;
+  background-color: #f6f6f6;
+}
+blockquote {
+  font-size: 14px;
+}
+
+header {
+  background-color: #111;
+  color: #eee;
+  padding: 40px;
+}
+header h1 {
+  text-transform: uppercase;
+  font-size: 50px;
+  letter-spacing: 15px;
+  margin: 0 0 0 4px;
+}
+@media (max-width: 767px) {
+  header h1 {
+    letter-spacing: 5px;
+    font-size: 40px;
+  }
+  .list-inline li {
+    display: list-item;
+  }
+}
+
+header h1 a {
+  color: #eee;
+}
+header h1 a:hover {
+  text-decoration: none;
+}
+header ul {
+  margin: 25px 0 0;
+}
+header ul li {
+  padding-bottom: 20px;
+}
+header ul a {
+  color: #ddd;
+  font-weight: 700;
+}
+header ul a span {
+  color: #888;
+  font-weight: 300;
+  padding-right: 2px;
+}
+header ul a:hover {
+  color: #48b983;
+  text-decoration: none;
+}
+header ul a:hover span {
+  color: #1b8057;
+}
+
+.content {
+  padding: 40px;
+  max-width: 1000px;
+  line-height: 22px;
+}
+.content h2 {
+  margin-top: 0;
+}
+.content h3 {
+  margin-top: 25px;
+  margin-bottom: 15px;
+}
+.content h4 {
+  margin-top: 25px;
+  margin-bottom: 15px;
+}
+.content p {
+  margin-bottom: 15px;
+}
+.content p:last-child {
+  margin-bottom: 0;
+}
+.content ul {
+  margin-bottom: 15px;
+}
+.content li {
+  margin-bottom: 15px;
+}
+.content img {
+  max-width: 100%;
+}
+
+.post-item {
+  margin-bottom: 40px;
+}
+.post-item:last-child {
+  margin-bottom: 0;
+}
+.post-item a {
+  display: block;
+}
+.post-item a:hover {
+  text-decoration: none;
+}
+.post-item a h2 {
+  color: #222;
+}
+.post-item a:hover h2 {
+  text-decoration: underline;
+}
+.post-item a p {
+  color: #888;
+}
+
+p.date {
+  color: #aaa;
+}
+p.date a, p.date a:link, p.date a:visited {
+  color: #aaa !important;
+  text-decoration: underline;
+}
+p.date a:hover, p.date a:active {
+  color: #48b983 !important;
+}
+p.signature {
+  margin-top: 60px;
+  color: #666;
+}
+
+.post h2 {
+  margin-bottom: 20px;
+}
+
+.presentation-list .date {
+  font-family: monospace;
+  padding-right: 10px;
+}
+.presentation-list small {
+  padding-left: 5px;
+}
+@media (max-width: 767px) {
+  .presentation-list .date {
+    display: block;
+  }
+  .presentation-list small {
+    display: block;
+    padding-left: 0;
+  }
+}
+
+.presentation section {
+  margin-top: 20px;
+  margin-botom: 20px;
+}
+.presentation .parleys a {
+  display: none;
+}
+.presentation .description {
+  margin-bottom: 50px;
+}
+
+.presentation .youtube,
+.presentation .parleys,
+.presentation .vimeo {
+  position: relative;
+  padding-bottom: 56.25%;
+  height: 0;
+  overflow: hidden;
+  max-width: 100%;
+}
+.presentation .youtube iframe,
+.presentation .parleys iframe,
+.presentation .vimeo iframe,
+.presentation .youtube object,
+.presentation .vimeo object,
+.presentation .youtube embed,
+.presentation .vimeo embed {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+img.float-right {
+  margin: 0 1em .5em 1em;
+  float: right;
+}
+@media (max-width: 500px) {
+  img.float-right {
+    float: none;
+    display: block;
+    margin: 1em auto;
+  }
+}

@@ -1,0 +1,19 @@
+url: "http://jaredsburrows.com"
+
+highlighter: rouge
+permalink: /:title/
+markdown: kramdown
+
+future: true
+
+plugins:
+  - jekyll-feed
+  - jekyll-redirect-from
+
+collections:
+  presentations:
+    output: true
+    permalink: /:title/
+
+exclude: [vendor]
+
