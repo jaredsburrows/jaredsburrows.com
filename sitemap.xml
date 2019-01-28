@@ -5,12 +5,12 @@
   xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9
             http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
   <url>
-    <loc>http://jaredsburrows.com/</loc>
+    <loc>https://jaredsburrows.com/</loc>
     <lastmod>2017-12-05T16:34:50+00:00</lastmod>
     <priority>1.00</priority>
   </url>
   <url>
-    <loc>http://jaredsburrows.com/presentations/</loc>
+    <loc>https://jaredsburrows.com/presentations/</loc>
     <lastmod>2017-12-05T16:34:50+00:00</lastmod>
     <priority>0.80</priority>
   </url>

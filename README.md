@@ -8,6 +8,18 @@ My blog, presentations, GitHub, and social links.
 
 Personal website
 
+### Install dependencies
+
+    $ bundle install
+
+### Update dependencies
+
+    $ bundle update
+
+### Preview the website
+
+    $ bundle exec jekyll serve
+
 
 License
 =======
