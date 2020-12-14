@@ -3,7 +3,7 @@
 My blog, presentations, GitHub, and social links.
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](http://www.apache.org/licenses/LICENSE-2.0)
-[![Build Status](https://travis-ci.org/jaredsburrows/jaredsburrows.com.svg?branch=gh-pages)](https://travis-ci.org/jaredsburrows/jaredsburrows.com)
+[![Build](https://github.com/jaredsburrows/jaredsburrows.com/workflows/build/badge.svg)](https://github.com/jaredsburrows/jaredsburrows.com/actions)
 [![Twitter Follow](https://img.shields.io/twitter/follow/jaredsburrows.svg?style=social)](https://twitter.com/jaredsburrows)
 
 Personal website
