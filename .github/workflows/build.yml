@@ -15,16 +15,23 @@ jobs:
           key: ${{ runner.os }}-bundler
           restore-keys: ${{ runner.os }}-bundler
 
-      - uses: actions/checkout@v2
+      - name: Checkout Project
+        uses: actions/checkout@v2
 
-      - run: echo "::set-output name=RUBY_VERSION::$(cat .ruby-version)"
+      - name: Set RUBY_VERSION
+        run: echo "::set-output name=RUBY_VERSION::$(cat .ruby-version)"
         id: rbenv
 
-      - uses: actions/setup-ruby@v1
+      - name: Setup Ruby
+        uses: actions/setup-ruby@v1
         with:
           ruby-version: "${{ steps.rbenv.outputs.RUBY_VERSION }}"
-      - run: gem install bundler
 
-      - run: bundle install
-      - run: bundle exec jekyll build
+      - name: Setup Bundler
+        run: gem install bundler
 
+      - name: Install Dependencies
+        run: bundle install
+
+      - name: Build the Project
+        run: bundle exec jekyll build
