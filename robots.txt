@@ -1,2 +1,2 @@
 User-agent: *
-Sitemap: http://jaredsburrows.com/sitemap.xml
+Sitemap: https://jaredsburrows.com/sitemap.xml
