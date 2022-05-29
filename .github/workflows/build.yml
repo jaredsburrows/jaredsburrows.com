@@ -23,14 +23,11 @@ jobs:
       - name: Checkout Project
         uses: actions/checkout@v3
 
-      - name: Set RUBY_VERSION
-        run: echo "::set-output name=RUBY_VERSION::$(cat .ruby-version)"
-        id: rbenv
-
-      - name: Setup Ruby
-        uses: actions/setup-ruby@v1
+      - name: Configure Ruby
+        uses: ruby/setup-ruby@v1
         with:
-          ruby-version: "${{ steps.rbenv.outputs.RUBY_VERSION }}"
+          ruby-version: 3.0
+          bundler-cache: true
 
       - name: Setup Bundler
         run: gem install bundler
