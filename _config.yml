@@ -1,4 +1,4 @@
-url: "http://jaredsburrows.com"
+url: "https://jaredsburrows.com"
 
 highlighter: rouge
 permalink: /:title/
@@ -15,5 +15,17 @@ collections:
     output: true
     permalink: /:title/
 
-exclude: [vendor]
+include:
+  - '.well-known'
 
+exclude:
+  - 'node_modules'
+  - 'scripts'
+  - 'vendor'
+  - Gemfile
+  - Gemfile.lock
+  - package.json
+  - package-lock.json
+  - README.md
+  - LICENSE.txt
+  - CNAME
