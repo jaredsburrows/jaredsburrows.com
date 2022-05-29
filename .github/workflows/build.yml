@@ -1,6 +1,11 @@
 name: build
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - gh-pages
+  pull_request:
+    types: [ opened, labeled, unlabeled, synchronize ]
 
 jobs:
   jekyll:
