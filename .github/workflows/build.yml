@@ -16,7 +16,7 @@ jobs:
           restore-keys: ${{ runner.os }}-bundler
 
       - name: Checkout Project
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Set RUBY_VERSION
         run: echo "::set-output name=RUBY_VERSION::$(cat .ruby-version)"
