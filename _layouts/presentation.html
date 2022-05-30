@@ -12,6 +12,7 @@
 
       gtag('config', 'G-69EHJ9K7LX');
     </script>
+    <!-- End Global site tag (gtag.js) - Google Analytics -->
     <!-- Google Tag Manager -->
     <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
     new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
@@ -90,13 +91,6 @@
       {% if page.youtube %}
       <section class="youtube">
         <iframe src="https://www.youtube.com/embed/{{ page.youtube }}" frameborder="0" allowfullscreen></iframe>
-      </section>
-      {% endif %}
-      {% if page.parleys %}
-      <section class="parleys">
-        <div data-parleys-presentation="{{ page.parleys }}">
-          <script async type="text/javascript" src="https://parleys.com/js/parleys-share.js"></script>
-        </div>
       </section>
       {% endif %}
       {% if page.vimeo %}
