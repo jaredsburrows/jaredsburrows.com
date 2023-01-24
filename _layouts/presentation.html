@@ -25,7 +25,7 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Presentation: {{ page.title }} - Jared Burrows</title>
-    <meta name="description" content="My personal website that shows my presentations and links to my blog, Github, Twitter, LinkedIn and StackOverflow accounts.">
+    <meta name="description" content="My personal website that shows my presentations and links to my blog, Github projects, Twitter, LinkedIn and StackOverflow accounts.">
     <meta name="keywords" content="jared, burrows, personal, website, java, android">
     <link rel="stylesheet" href="/static/css/bootstrap-3.1.1.min.css" type="text/css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Merriweather+Sans:400,300,700&display=swap" type="text/css">
@@ -33,9 +33,29 @@
     <link rel="stylesheet" href="/static/css/syntax.css" type="text/css">
     <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
     <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    <link rel="canonical" href="https://jaredsburrows.com/presentations/" />
     {% feed_meta %}
     <meta name="theme-color" content="#111111">
 
+    <!-- Schema Meta Data - https://Schema.org/ -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org/",
+        "@type": "Person",
+        "name": "Jared Burrows",
+        "url": "https://jaredsburrows.com/",
+        "image": "https://en.gravatar.com/userimage/52314362/f7e5df21bbe7e3b27966e4cd27fbad06?size=200",
+        "sameAs": [
+          "https://www.twitter.com/jaredsburrows",
+          "https://www.linkedin.com/in/jaredsburrows",
+          "https://www.github.com/jaredsburrows",
+          "https://jaredsburrows.com/"
+        ],
+        "jobTitle": "Software Engineer"
+      }
+    </script>
+
+    <!-- OpenGraph Meta - https://ogp.me/ -->
     <meta name="og:type" content="article">
     <meta name="og:updated_time" content="{{ page.date | date: "%Y-%m-%d" }}">
     <meta name="og:title" content="Presentation: {{ page.title }}">

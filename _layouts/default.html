@@ -25,19 +25,39 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ page.title }} - Jared Burrows</title>
-    <meta name="description" content="My personal website that shows my presentations and links to my blog, Github, Twitter, LinkedIn and StackOverflow accounts.">
+    <meta name="description" content="My personal website that shows my presentations and links to my blog, Github projects, Twitter, LinkedIn and StackOverflow accounts.">
     <meta name="keywords" content="jared, burrows, personal, website, java, android">
     <link rel="stylesheet" href="/static/css/bootstrap-3.1.1.min.css" type="text/css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Merriweather+Sans:400,300,700&display=swap" type="text/css">
     <link rel="stylesheet" href="/static/css/app.css" type="text/css">
     <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
     <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    <link rel="canonical" href="https://jaredsburrows.com/" />
     {% feed_meta %}
     <meta name="theme-color" content="#111111">
 
+    <!-- Schema Meta Data - https://Schema.org/ -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org/",
+        "@type": "Person",
+        "name": "Jared Burrows",
+        "url": "https://jaredsburrows.com/",
+        "image": "https://en.gravatar.com/userimage/52314362/f7e5df21bbe7e3b27966e4cd27fbad06?size=200",
+        "sameAs": [
+          "https://www.twitter.com/jaredsburrows",
+          "https://www.linkedin.com/in/jaredsburrows",
+          "https://www.github.com/jaredsburrows",
+          "https://jaredsburrows.com/"
+        ],
+        "jobTitle": "Software Engineer"
+      }
+    </script>
+
+    <!-- OpenGraph Meta - https://ogp.me/ -->
     <meta name="og:type" content="website">
     <meta name="og:title" content="{{ page.title }}">
-    <meta name="og:description" content="My blog, presentations, GitHub, and social links.">
+    <meta name="og:description" content="My blog, presentations, GitHub projects and social links.">
     <meta name="og:site_name" content="Jared Burrows">
     <meta name="og:url" content="{{ site.url }}">
     <meta name="og:image" content="https://en.gravatar.com/userimage/52314362/f7e5df21bbe7e3b27966e4cd27fbad06?size=200">
@@ -46,7 +66,7 @@
     <meta name="twitter:site" content="@jaredsburrows">
     <meta name="twitter:domain" content="jaredsburrows.com">
     <meta name="twitter:title" content="{{ page.title }}">
-    <meta name="twitter:description" content="My blog, presentations, GitHub, and social links.">
+    <meta name="twitter:description" content="My blog, presentations, GitHub projects and social links.">
     <meta name="twitter:image" content="https://en.gravatar.com/userimage/52314362/f7e5df21bbe7e3b27966e4cd27fbad06?size=200">
     <meta name="twitter:url" content="{{ site.url }}">
     <meta name="twitter:label1" content="Posts">
