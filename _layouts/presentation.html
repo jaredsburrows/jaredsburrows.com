@@ -62,7 +62,7 @@
     <meta name="og:site_name" content="Jared Burrows">
     <meta name="og:url" content="{{ site.url }}{{ page.url }}">
     {% if page.youtube %}
-    <meta name="og:image" content="http://img.youtube.com/vi/{{ page.youtube }}/maxresdefault.jpg">
+    <meta name="og:image" content="https://img.youtube.com/vi/{{ page.youtube }}/maxresdefault.jpg">
     {% elsif page.speakerdeck %}
     <meta name="og:image" content="https://speakerd.s3.amazonaws.com/presentations/{{ page.speakerdeck }}/slide_0.jpg">
     {% endif %}
@@ -75,7 +75,7 @@
     <meta name="twitter:title" content="Presentation: {{ page.title }}">
     <meta name="twitter:description" content="{{ content | strip_html | escape_once }}">
     {% if page.youtube %}
-    <meta name="twitter:image" content="http://img.youtube.com/vi/{{ page.youtube }}/maxresdefault.jpg">
+    <meta name="twitter:image" content="https://img.youtube.com/vi/{{ page.youtube }}/maxresdefault.jpg">
     {% elsif page.speakerdeck %}
     <meta name="twitter:image" content="https://speakerd.s3.amazonaws.com/presentations/{{ page.speakerdeck }}/slide_0.jpg">
     {% endif %}
