@@ -40,19 +40,24 @@
     <script type="application/ld+json">
       {
         "@context": "https://schema.org/",
-        "@type": "Person",
+        "@type": "WebSite",
         "name": "Jared Burrows",
         "url": "https://jaredsburrows.com/",
-        "image": "https://en.gravatar.com/userimage/52314362/f7e5df21bbe7e3b27966e4cd27fbad06?size=200",
+        "alternateName": "Jared Burrows",
         "sameAs": [
           "https://www.twitter.com/jaredsburrows",
           "https://www.linkedin.com/in/jaredsburrows",
           "https://www.github.com/jaredsburrows",
           "https://jaredsburrows.com/"
         ],
-        "jobTitle": "Software Engineer"
+        "potentialAction": {
+          "@type": "SearchAction",
+          "target": "{search_term_string}",
+          "query-input": "required name=search_term_string"
+        }
       }
     </script>
+    <!-- End Schema Meta Data -->
 
     <!-- OpenGraph Meta - https://ogp.me/ -->
     <meta name="og:type" content="website">
@@ -61,7 +66,9 @@
     <meta name="og:site_name" content="Jared Burrows">
     <meta name="og:url" content="{{ site.url }}">
     <meta name="og:image" content="https://en.gravatar.com/userimage/52314362/f7e5df21bbe7e3b27966e4cd27fbad06?size=200">
+    <!-- End OpenGraph Meta - https://ogp.me/ -->
 
+    <!-- Twitter Meta -->
     <meta name="twitter:card" content="summary">
     <meta name="twitter:site" content="@jaredsburrows">
     <meta name="twitter:domain" content="jaredsburrows.com">
@@ -73,6 +80,7 @@
     <meta name="twitter:data1" content="{{ site.posts | size }}">
     <meta name="twitter:label2" content="Presentations">
     <meta name="twitter:data2" content="{{ site.presentations | size }}">
+    <!-- End Twitter Meta -->
   </head>
   <body>
 

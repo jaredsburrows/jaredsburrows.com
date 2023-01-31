@@ -51,20 +51,61 @@ layout: null
     <!-- Schema Meta Data - https://Schema.org/ -->
     <script type="application/ld+json">
       {
-        "@context": "https://schema.org/",
-        "@type": "Person",
-        "name": "Jared Burrows",
-        "url": "https://jaredsburrows.com/",
-        "image": "https://en.gravatar.com/userimage/52314362/f7e5df21bbe7e3b27966e4cd27fbad06?size=200",
-        "sameAs": [
-          "https://www.twitter.com/jaredsburrows",
-          "https://www.linkedin.com/in/jaredsburrows",
-          "https://www.github.com/jaredsburrows",
-          "https://jaredsburrows.com/"
-        ],
-        "jobTitle": "Software Engineer"
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          {
+            "@type": "ListItem",
+            "position": 1,
+            "name": "Home",
+            "item": "https://jaredsburrows.com/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 2,
+            "name": "Blog",
+            "item": "https://blog.jaredsburrows.com/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 3,
+            "name": "My Apps",
+            "item": "https://burrowsapps.com/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 4,
+            "name": "Presentations",
+            "item": "https://jaredsburrows.com/presentations/"
+          },
+          {
+            "@type": "ListItem",
+            "position": 5,
+            "name": "Github",
+            "item": "https://github.com/jaredsburrows"
+          },
+          {
+            "@type": "ListItem",
+            "position": 6,
+            "name": "Twitter",
+            "item": "https://twitter.com/jaredsburrows"
+          },
+          {
+            "@type": "ListItem",
+            "position": 7,
+            "name": "LinkedIn",
+            "item": "https://linkedin.com/in/jaredsburrows"
+          },
+          {
+            "@type": "ListItem",
+            "position": 8,
+            "name": "StacOverflow",
+            "item": "https://stackoverflow.com/users/950427/jared-burrows"
+          }
+        ]
       }
     </script>
+    <!-- End Schema Meta Data -->
 
     <!-- OpenGraph Meta - https://ogp.me/ -->
     <meta name="og:type" content="website">
@@ -73,7 +114,9 @@ layout: null
     <meta name="og:site_name" content="Jared Burrows">
     <meta name="og:url" content="{{ site.url }}">
     <meta name="og:image" content="https://en.gravatar.com/userimage/52314362/f7e5df21bbe7e3b27966e4cd27fbad06?size=200">
+    <!-- End OpenGraph Meta - https://ogp.me/ -->
 
+    <!-- Twitter Meta -->
     <meta name="twitter:card" content="summary">
     <meta name="twitter:site" content="@jaredsburrows">
     <meta name="twitter:domain" content="jaredsburrows.com">
@@ -85,6 +128,7 @@ layout: null
     <meta name="twitter:data1" content="{{ site.posts | size }}">
     <meta name="twitter:label2" content="Presentations">
     <meta name="twitter:data2" content="{{ site.presentations | size }}">
+    <!-- End Twitter Meta -->
   </head>
   <body>
 

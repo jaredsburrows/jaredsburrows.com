@@ -40,20 +40,19 @@
     <!-- Schema Meta Data - https://Schema.org/ -->
     <script type="application/ld+json">
       {
-        "@context": "https://schema.org/",
-        "@type": "Person",
-        "name": "Jared Burrows",
-        "url": "https://jaredsburrows.com/",
-        "image": "https://en.gravatar.com/userimage/52314362/f7e5df21bbe7e3b27966e4cd27fbad06?size=200",
-        "sameAs": [
-          "https://www.twitter.com/jaredsburrows",
-          "https://www.linkedin.com/in/jaredsburrows",
-          "https://www.github.com/jaredsburrows",
-          "https://jaredsburrows.com/"
-        ],
-        "jobTitle": "Software Engineer"
+        "@context": "https://schema.org",
+        "@type": "NewsArticle",
+        "headline": "Presentation: {{ page.title }} - Jared Burrows",
+        "author": [
+          {
+            "@type": "Person",
+            "name": "Jared Burrows",
+            "url": "https://jaredsburrows.com/"
+          }
+        ]
       }
     </script>
+    <!-- End Schema Meta Data -->
 
     <!-- OpenGraph Meta - https://ogp.me/ -->
     <meta name="og:type" content="article">
@@ -67,7 +66,9 @@
     {% elsif page.speakerdeck %}
     <meta name="og:image" content="https://speakerd.s3.amazonaws.com/presentations/{{ page.speakerdeck }}/slide_0.jpg">
     {% endif %}
+    <!-- End OpenGraph Meta - https://ogp.me/ -->
 
+    <!-- Twitter Meta -->
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:site" content="@jaredsburrows">
     <meta name="twitter:domain" content="jaredsburrows.com">
@@ -83,6 +84,7 @@
     <meta name="twitter:data1" content="{{ page.event }} ({{ page.location }})">
     <meta name="twitter:label2" content="Date">
     <meta name="twitter:data2" content="{{ page.date | date:"%d %B %Y" }}">
+    <!-- End Twitter Meta -->
   </head>
   <body>
 
