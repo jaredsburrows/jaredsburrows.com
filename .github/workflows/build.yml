@@ -12,19 +12,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout Project
+        uses: actions/checkout@v3.5.1
+
       - name: Cache dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v3.3.1
         with:
           path: |
             ~/.rvm
           key: ${{ runner.os }}-bundler
           restore-keys: ${{ runner.os }}-bundler
 
-      - name: Checkout Project
-        uses: actions/checkout@v3
-
       - name: Configure Ruby
-        uses: ruby/setup-ruby@v1
+        uses: ruby/setup-ruby@v1.146.0
         with:
           ruby-version: 3.1
           bundler-cache: true
