@@ -1,1 +1,4 @@
-.well-known/security.txt
+Contact: mailto:burrowsapps+security@gmail.com
+Expires: 2022-05-18T05:00:00.000Z
+Preferred-Languages: en
+Canonical: https//www.jaredsburrows.com/.well-known/security.txt
