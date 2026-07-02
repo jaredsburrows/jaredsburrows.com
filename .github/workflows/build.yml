@@ -8,32 +8,21 @@ on:
     types: [ opened, labeled, unlabeled, synchronize ]
 
 jobs:
-  jekyll:
+  validate:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Project
         uses: actions/checkout@v4.1.6
 
-      - name: Cache dependencies
-        uses: actions/cache@v4
+      - name: Configure Java
+        uses: actions/setup-java@v4
         with:
-          path: |
-            ~/.rvm
-          key: ${{ runner.os }}-bundler
-          restore-keys: ${{ runner.os }}-bundler
+          distribution: temurin
+          java-version: 17
 
-      - name: Configure Ruby
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: 3.1
-          bundler-cache: true
+      - name: Install Nu HTML Checker
+        run: npm install --no-save vnu-jar
 
-      - name: Setup Bundler
-        run: gem install bundler
-
-      - name: Install Dependencies
-        run: bundle install
-
-      - name: Build the Project
-        run: bundle exec jekyll build
+      - name: Validate HTML
+        run: java -jar node_modules/vnu-jar/build/dist/vnu.jar index.html
