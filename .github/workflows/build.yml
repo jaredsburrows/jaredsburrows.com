@@ -7,6 +7,9 @@ on:
   pull_request:
     types: [ opened, labeled, unlabeled, synchronize ]
 
+permissions:
+  contents: read
+
 # Cancel superseded runs for the same PR/branch (saves runner minutes on rapid pushes, e.g.
 # Renovate, and gives faster feedback on the latest commit); let master runs finish.
 concurrency:
