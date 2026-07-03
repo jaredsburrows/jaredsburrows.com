@@ -104,7 +104,7 @@ nav .t {
 }
 
 nav .d {
-  font-size: 13.5px;
+  font-size: 14px;
   color: #8a877f;
 }
 
@@ -153,19 +153,19 @@ nav .ar {
 }
 
 .talks .dt {
-  font-size: 12.5px;
+  font-size: 13px;
   color: #57544d;
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
 }
 
 .talks .tt {
-  font-size: 14.5px;
+  font-size: 14px;
   font-weight: 500;
   color: #e8e6e1;
 }
 
 .talks .vn {
-  font-size: 12.5px;
+  font-size: 13px;
   color: #8a877f;
 }
 
@@ -203,7 +203,7 @@ nav .ar {
 }
 
 .talk-body .talk-meta {
-  font-size: 12.5px;
+  font-size: 13px;
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
 }
 
@@ -253,7 +253,7 @@ nav .ar {
   right: 0;
   bottom: 0;
   padding: 10px 14px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
   background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
 }
@@ -261,7 +261,7 @@ nav .ar {
 footer {
   display: flex;
   gap: 18px;
-  font-size: 12.5px;
+  font-size: 13px;
   color: #57544d;
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
 }
