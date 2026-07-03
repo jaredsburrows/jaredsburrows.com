@@ -1,37 +1,18 @@
 :root {
-  color-scheme: dark;
-  --bg: #121211;
-  --surface: #171715;
-  --surface-2: #1a1a18;
-  --border: #262521;
-  --text: #e8e6e1;
-  --text-2: #a8a59e;
-  --text-3: #8a877f;
-  --text-4: #7a776f;
-  --faint: #57544d;
-  --dot: #3a3934;
-  --link: #c9c6bf;
-  --link-underline: #3a3934;
-  --avatar-bg: #2a2a28;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color-scheme: light;
-    --bg: #faf9f7;
-    --surface: #f2f0eb;
-    --surface-2: #ebe9e3;
-    --border: #e3e0d9;
-    --text: #1c1b19;
-    --text-2: #55524b;
-    --text-3: #64615a;
-    --text-4: #6e6a62;
-    --faint: #757168;
-    --dot: #d5d1c9;
-    --link: #3f3c36;
-    --link-underline: #cfcbc3;
-    --avatar-bg: #e3e0d9;
-  }
+  color-scheme: light dark;
+  --bg: light-dark(#faf9f7, #121211);
+  --surface: light-dark(#f2f0eb, #171715);
+  --surface-2: light-dark(#ebe9e3, #1a1a18);
+  --border: light-dark(#e3e0d9, #262521);
+  --text: light-dark(#1c1b19, #e8e6e1);
+  --text-2: light-dark(#55524b, #a8a59e);
+  --text-3: light-dark(#64615a, #8a877f);
+  --text-4: light-dark(#6e6a62, #7a776f);
+  --faint: light-dark(#757168, #57544d);
+  --dot: light-dark(#d5d1c9, #3a3934);
+  --link: light-dark(#3f3c36, #c9c6bf);
+  --link-underline: light-dark(#cfcbc3, #3a3934);
+  --avatar-bg: light-dark(#e3e0d9, #2a2a28);
 }
 
 html,
@@ -95,6 +76,7 @@ h1 {
   line-height: 1.6;
   color: var(--text-2);
   max-width: 52ch;
+  text-wrap: pretty;
 }
 
 .meta {
@@ -242,6 +224,7 @@ nav .ar {
   font-size: 14px;
   line-height: 1.6;
   color: var(--text-2);
+  text-wrap: pretty;
 }
 
 .talk-body .talk-meta {
