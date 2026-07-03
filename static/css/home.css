@@ -223,6 +223,41 @@ nav .ar {
   margin: 14px 0 4px;
 }
 
+.talk-body .talk-ext {
+  display: block;
+  position: relative;
+  margin: 14px 0 4px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #1a1a18;
+  text-decoration: none;
+  color: #e8e6e1;
+}
+
+.talk-body .talk-ext img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  opacity: 0.85;
+  transition: opacity 0.12s;
+}
+
+.talk-body .talk-ext:hover img {
+  opacity: 1;
+}
+
+.talk-body .talk-ext .cap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
+}
+
 footer {
   display: flex;
   gap: 18px;

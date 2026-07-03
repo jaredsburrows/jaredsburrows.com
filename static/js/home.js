@@ -32,6 +32,11 @@
     return s;
   }
 
+  // YouTube and Speaker Deck refuse to be framed by a page with a null
+  // referer, which is what file:// sends — so local previews get thumbnail
+  // links instead of iframes.
+  var LOCAL = window.location.protocol === 'file:';
+
   function embed(src, title) {
     var f = document.createElement('iframe');
     f.src = src;
@@ -42,12 +47,39 @@
     return f;
   }
 
+  function card(href, thumb, label) {
+    var a = document.createElement('a');
+    a.className = 'talk-ext';
+    a.href = href;
+
+    var img = document.createElement('img');
+    img.src = thumb;
+    img.alt = '';
+    img.loading = 'lazy';
+    a.appendChild(img);
+
+    var cap = document.createElement('span');
+    cap.className = 'cap';
+    cap.textContent = label + ' ↗';
+    a.appendChild(cap);
+
+    return a;
+  }
+
   function appendEmbeds(body, talk) {
     if (talk.youtube) {
-      body.appendChild(embed('https://www.youtube-nocookie.com/embed/' + talk.youtube, talk.title + ' — video'));
+      body.appendChild(LOCAL
+        ? card('https://www.youtube.com/watch?v=' + talk.youtube,
+               'https://img.youtube.com/vi/' + talk.youtube + '/hqdefault.jpg',
+               'Watch on YouTube')
+        : embed('https://www.youtube-nocookie.com/embed/' + talk.youtube, talk.title + ' — video'));
     }
     if (talk.speakerdeck) {
-      body.appendChild(embed('https://speakerdeck.com/player/' + talk.speakerdeck, talk.title + ' — slides'));
+      body.appendChild(LOCAL
+        ? card('https://speakerdeck.com/player/' + talk.speakerdeck,
+               'https://speakerd.s3.amazonaws.com/presentations/' + talk.speakerdeck + '/slide_0.jpg',
+               'View slides on Speaker Deck')
+        : embed('https://speakerdeck.com/player/' + talk.speakerdeck, talk.title + ' — slides'));
     }
   }
 
@@ -107,9 +139,19 @@
         var open = item.classList.toggle('open');
         row.setAttribute('aria-expanded', String(open));
         tg.textContent = open ? '−' : '+';
-        if (open && !loaded) {
-          loaded = true;
-          appendEmbeds(body, talk);
+        if (open) {
+          // accordion: close any other open talk
+          Array.prototype.forEach.call(list.querySelectorAll('.talk.open'), function (other) {
+            if (other === item) { return; }
+            other.classList.remove('open');
+            var otherRow = other.querySelector('.talk-row');
+            otherRow.setAttribute('aria-expanded', 'false');
+            otherRow.querySelector('.tg').textContent = '+';
+          });
+          if (!loaded) {
+            loaded = true;
+            appendEmbeds(body, talk);
+          }
         }
       });
 
