@@ -23,12 +23,8 @@ Add one entry to `static/js/talks.js`.
 License
 =======
 
-The content of the site (blog posts, presentation slides, etc.) are licensed as [Creative Commons CC BY 4.0](https://creativecommons.org/licenses/by/4.0/legalcode).
-
-Based on [Jake Whartons's Jekyll Setup](https://www.github.com/jakewharton/jakewharton.com) and the code powering the site is licensed as:
-
 ```
-Copyright 2017 Jake Wharton
+Copyright (C) 2026 Jared Burrows
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
