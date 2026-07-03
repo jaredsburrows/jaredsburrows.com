@@ -4,7 +4,9 @@
   // © year
   document.getElementById('copyright').textContent = `© ${new Date().getFullYear()}`;
 
-  // GitHub follower count (falls back to baked-in text when offline/rate-limited)
+  // Live stats (fall back to baked-in text when offline/rate-limited).
+  // Baked values match the live ones so the update is invisible unless
+  // a count actually changed; en-US formatting keeps them identical.
   (async () => {
     try {
       const response = await fetch('https://api.github.com/users/jaredsburrows');
@@ -12,10 +14,25 @@
       const { followers } = await response.json();
       if (Number.isFinite(followers)) {
         document.getElementById('gh-followers').textContent =
-          `${followers.toLocaleString()} followers on GitHub`;
+          `${followers.toLocaleString('en-US')} followers on GitHub`;
       }
     } catch {
       // keep baked-in count
+    }
+  })();
+
+  (async () => {
+    try {
+      const response = await fetch('https://api.stackexchange.com/2.3/users/950427?site=stackoverflow');
+      if (!response.ok) return;
+      const { items } = await response.json();
+      const reputation = items?.[0]?.reputation;
+      if (Number.isFinite(reputation)) {
+        document.getElementById('so-rep').textContent =
+          `${reputation.toLocaleString('en-US')} rep on Stack Overflow`;
+      }
+    } catch {
+      // keep baked-in value
     }
   })();
 
