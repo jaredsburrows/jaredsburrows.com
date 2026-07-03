@@ -1,4 +1,4 @@
 Contact: mailto:burrowsapps+security@gmail.com
-Expires: 2024-05-18T05:00:00.000Z
+Expires: 2027-05-18T05:00:00.000Z
 Preferred-Languages: en
 Canonical: https://jaredsburrows.com/.well-known/security.txt
