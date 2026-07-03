@@ -7,33 +7,35 @@ on:
   pull_request:
     types: [ opened, labeled, unlabeled, synchronize ]
 
+permissions:
+  contents: read
+
+# Cancel superseded runs for the same PR/branch (saves runner minutes on rapid pushes, e.g.
+# Renovate, and gives faster feedback on the latest commit); let master runs finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/gh-pages' }}
+
+env:
+  JAVA_VERSION: 25
+
 jobs:
-  jekyll:
+  checks:
+    name: Checks
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Project
-        uses: actions/checkout@v4.1.6
+        uses: actions/checkout@v7.0.0
 
-      - name: Cache dependencies
-        uses: actions/cache@v4.0.2
+      - name: Configure JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v5.4.0
         with:
-          path: |
-            ~/.rvm
-          key: ${{ runner.os }}-bundler
-          restore-keys: ${{ runner.os }}-bundler
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
 
-      - name: Configure Ruby
-        uses: ruby/setup-ruby@V1.177.0
-        with:
-          ruby-version: 3.1
-          bundler-cache: true
+      - name: Install Nu HTML Checker
+        run: npm install --no-save vnu-jar
 
-      - name: Setup Bundler
-        run: gem install bundler
-
-      - name: Install Dependencies
-        run: bundle install
-
-      - name: Build the Project
-        run: bundle exec jekyll build
+      - name: Validate HTML
+        run: java -jar node_modules/vnu-jar/build/dist/vnu.jar index.html

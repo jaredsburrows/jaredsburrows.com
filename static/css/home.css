@@ -1,0 +1,303 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #121211;
+  color: #e8e6e1;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap {
+  max-width: 620px;
+  margin: 0 auto;
+  padding: 88px 32px 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 44px;
+  min-height: calc(100vh - 144px);
+  box-sizing: border-box;
+}
+
+.id {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.id-text {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.avatar {
+  width: 104px;
+  height: 104px;
+  border-radius: 50%;
+  background: #2a2a28;
+  object-fit: cover;
+}
+
+h1 {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.bio {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.6;
+  color: #a8a59e;
+  max-width: 52ch;
+}
+
+.meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 13px;
+  color: #7a776f;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  flex-wrap: wrap;
+}
+
+.meta .dot {
+  color: #3a3934;
+}
+
+.meta a {
+  color: #c9c6bf;
+  text-decoration: none;
+  border-bottom: 1px solid #3a3934;
+}
+
+nav {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid #262521;
+}
+
+nav a {
+  display: grid;
+  grid-template-columns: 150px 1fr auto;
+  gap: 16px;
+  align-items: baseline;
+  padding: 15px 0;
+  border-bottom: 1px solid #262521;
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.12s;
+}
+
+nav a:hover {
+  background: #171715;
+}
+
+nav .t {
+  font-size: 15px;
+  font-weight: 600;
+  color: #e8e6e1;
+}
+
+nav .d {
+  font-size: 13.5px;
+  color: #8a877f;
+}
+
+nav .ar {
+  font-size: 13px;
+  color: #57544d;
+}
+
+.talks {
+  display: flex;
+  flex-direction: column;
+}
+
+.talks h2 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #7a776f;
+}
+
+.talk {
+  border-bottom: 1px solid #262521;
+}
+
+.talk-row {
+  display: grid;
+  grid-template-columns: 76px 1fr auto auto;
+  gap: 16px;
+  align-items: baseline;
+  width: 100%;
+  margin: 0;
+  padding: 13px 0;
+  background: none;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.talk-row:hover {
+  background: #171715;
+}
+
+.talks .dt {
+  font-size: 12.5px;
+  color: #57544d;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+.talks .tt {
+  font-size: 14.5px;
+  font-weight: 500;
+  color: #e8e6e1;
+}
+
+.talks .vn {
+  font-size: 12.5px;
+  color: #8a877f;
+}
+
+.talks .tg {
+  font-size: 14px;
+  color: #57544d;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+.talk-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.25s ease;
+}
+
+.talk.open .talk-panel {
+  grid-template-rows: 1fr;
+}
+
+.talk-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.talk-body {
+  padding: 2px 0 18px;
+  margin-left: 92px;
+}
+
+.talk-body p {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #a8a59e;
+}
+
+.talk-body .talk-meta {
+  font-size: 12.5px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+.talk-body .talk-meta a {
+  color: #c9c6bf;
+  text-decoration: none;
+  border-bottom: 1px solid #3a3934;
+}
+
+.talk-body iframe {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 0;
+  border-radius: 6px;
+  background: #1a1a18;
+  margin: 14px 0 4px;
+}
+
+.talk-body .talk-ext {
+  display: block;
+  position: relative;
+  margin: 14px 0 4px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #1a1a18;
+  text-decoration: none;
+  color: #e8e6e1;
+}
+
+.talk-body .talk-ext img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  opacity: 0.85;
+  transition: opacity 0.12s;
+}
+
+.talk-body .talk-ext:hover img {
+  opacity: 1;
+}
+
+.talk-body .talk-ext .cap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
+}
+
+footer {
+  display: flex;
+  gap: 18px;
+  font-size: 12.5px;
+  color: #57544d;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+footer .yr {
+  margin-left: auto;
+}
+
+@media (max-width: 560px) {
+  nav a {
+    grid-template-columns: 1fr auto;
+  }
+
+  nav .d {
+    grid-column: 1 / -1;
+  }
+
+  nav .ar {
+    grid-row: 1;
+    grid-column: 2;
+  }
+
+  .talk-row {
+    grid-template-columns: 76px 1fr auto;
+  }
+
+  .talks .vn {
+    grid-column: 2;
+  }
+
+  .talks .tg {
+    grid-row: 1;
+    grid-column: 3;
+  }
+
+  .talk-body {
+    margin-left: 0;
+  }
+}

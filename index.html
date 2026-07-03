@@ -1,10 +1,11 @@
----
-layout: null
----
 <!DOCTYPE html>
 
 <html lang="en">
   <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="preconnect" href="https://avatars.githubusercontent.com">
+    <link rel="preconnect" href="https://api.github.com" crossorigin>
 
     <!-- Global site tag (gtag.js) - Google Analytics -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-69EHJ9K7LX"></script>
@@ -24,110 +25,53 @@ layout: null
     })(window,document,'script','dataLayer','GTM-5DMBGS2');</script>
     <!-- End Google Tag Manager -->
 
-    <meta charset="utf-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Jared Burrows</title>
-    <meta name="description" content="My personal website that shows my presentations and links to my blog, Github projects, Twitter, LinkedIn and StackOverflow accounts.">
-    <meta name="keywords" content="jared, burrows, personal, website, java, android">
-    <link rel="stylesheet" href="/static/css/bootstrap-3.1.1.min.css" type="text/css">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Merriweather+Sans:400,300,700&display=swap" type="text/css">
-    <link rel="stylesheet" href="/static/css/app.css" type="text/css">
-    <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
-    <link rel="icon" href="/favicon.ico" type="image/x-icon">
-    <link rel="canonical" href="https://jaredsburrows.com/" />
-    <meta name="theme-color" content="#111111">
-    <style>
-      body {
-        background-color: #111 !important;
-        background: url('/static/image/me.webp') no-repeat center center;
-        background-size: cover;
-      }
-      header {
-        background-color: transparent !important;
-      }
-    </style>
+    <title>Jared Burrows — Software Engineer</title>
+    <meta name="description" content="Jared Burrows — software engineer specializing in Android and Kotlin. Open-source maintainer (gradle-license-plugin), conference speaker, blog, talks and projects.">
+    <link rel="stylesheet" href="static/css/home.css" type="text/css">
+    <link rel="shortcut icon" href="favicon.ico" type="image/x-icon">
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+    <link rel="canonical" href="https://jaredsburrows.com/">
+    <meta name="theme-color" content="#121211">
 
     <!-- Schema Meta Data - https://Schema.org/ -->
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
-        "@type": "BreadcrumbList",
-        "itemListElement": [
-          {
-            "@type": "ListItem",
-            "position": 1,
-            "name": "Home",
-            "item": "https://jaredsburrows.com/"
-          },
-          {
-            "@type": "ListItem",
-            "position": 2,
-            "name": "Blog",
-            "item": "https://blog.jaredsburrows.com/"
-          },
-          {
-            "@type": "ListItem",
-            "position": 3,
-            "name": "My Apps",
-            "item": "https://burrowsapps.com/"
-          },
-          {
-            "@type": "ListItem",
-            "position": 4,
-            "name": "Presentations",
-            "item": "https://jaredsburrows.com/presentations/"
-          },
-          {
-            "@type": "ListItem",
-            "position": 5,
-            "name": "Github",
-            "item": "https://github.com/jaredsburrows"
-          },
-          {
-            "@type": "ListItem",
-            "position": 6,
-            "name": "Twitter",
-            "item": "https://twitter.com/jaredsburrows"
-          },
-          {
-            "@type": "ListItem",
-            "position": 7,
-            "name": "LinkedIn",
-            "item": "https://linkedin.com/in/jaredsburrows"
-          },
-          {
-            "@type": "ListItem",
-            "position": 8,
-            "name": "StacOverflow",
-            "item": "https://stackoverflow.com/users/950427/jared-burrows"
-          }
+        "@type": "Person",
+        "name": "Jared Burrows",
+        "url": "https://jaredsburrows.com/",
+        "image": "https://avatars.githubusercontent.com/u/1739848?v=4",
+        "jobTitle": "Software Engineer",
+        "knowsAbout": ["Android", "Kotlin", "Java", "Gradle"],
+        "sameAs": [
+          "https://blog.jaredsburrows.com",
+          "https://www.burrowsapps.com",
+          "https://github.com/jaredsburrows",
+          "https://x.com/jaredsburrows",
+          "https://www.linkedin.com/in/jaredsburrows",
+          "https://stackoverflow.com/users/950427/jared-burrows"
         ]
       }
     </script>
     <!-- End Schema Meta Data -->
 
     <!-- OpenGraph Meta - https://ogp.me/ -->
-    <meta name="og:type" content="website">
-    <meta name="og:title" content="jaredsburrows.com">
-    <meta name="og:description" content="My blog, presentations, GitHub projects and social links.">
-    <meta name="og:site_name" content="Jared Burrows">
-    <meta name="og:url" content="{{ site.url }}">
-    <meta name="og:image" content="https://en.gravatar.com/userimage/52314362/f7e5df21bbe7e3b27966e4cd27fbad06?size=200">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Jared Burrows — Software Engineer">
+    <meta property="og:description" content="Android &amp; Kotlin engineer. Open-source maintainer, conference speaker. Blog, talks and projects.">
+    <meta property="og:site_name" content="Jared Burrows">
+    <meta property="og:url" content="https://jaredsburrows.com">
+    <meta property="og:image" content="https://avatars.githubusercontent.com/u/1739848?v=4">
     <!-- End OpenGraph Meta - https://ogp.me/ -->
 
     <!-- Twitter Meta -->
     <meta name="twitter:card" content="summary">
     <meta name="twitter:site" content="@jaredsburrows">
     <meta name="twitter:domain" content="jaredsburrows.com">
-    <meta name="twitter:title" content="jaredsburrows.com">
-    <meta name="twitter:description" content="My blog, presentations, GitHub projects and social links.">
-    <meta name="twitter:image" content="https://en.gravatar.com/userimage/52314362/f7e5df21bbe7e3b27966e4cd27fbad06?size=200">
-    <meta name="twitter:url" content="{{ site.url }}">
-    <meta name="twitter:label1" content="Posts">
-    <meta name="twitter:data1" content="{{ site.posts | size }}">
-    <meta name="twitter:label2" content="Presentations">
-    <meta name="twitter:data2" content="{{ site.presentations | size }}">
+    <meta name="twitter:title" content="Jared Burrows — Software Engineer">
+    <meta name="twitter:description" content="Android &amp; Kotlin engineer. Open-source maintainer, conference speaker. Blog, talks and projects.">
+    <meta name="twitter:image" content="https://avatars.githubusercontent.com/u/1739848?v=4">
+    <meta name="twitter:url" content="https://jaredsburrows.com">
     <!-- End Twitter Meta -->
   </head>
   <body>
@@ -137,17 +81,59 @@ layout: null
                       height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     <!-- End Google Tag Manager (noscript) -->
 
-    <header>
-      <h1>Jared Burrows</h1>
-      <ul class="list-inline">
-        <li><a href="https://blog.jaredsburrows.com/" title="View my blog posts">Blog</a></li>
-        <li><a href="https://www.burrowsapps.com/" title="View my mobile applications on BurrowsApps.com">Mobile Apps</a></li>
-        <li><a href="/presentations" title="Watch my presentations from conferences and Meetups">Presentations</a></li>
-        <li><a href="https://www.github.com/jaredsburrows" title="View my open source contributions">Github</a></li>
-        <li><a href="https://www.twitter.com/jaredsburrows" title="View my Tweets">Twitter</a></li>
-        <li><a href="https://www.linkedin.com/in/jaredsburrows" title="View my Resume">LinkedIn</a></li>
-        <li><a href="https://www.stackoverflow.com/users/950427/jared-burrows" title="View my technical answers">Stack Overflow</a></li>
-      </ul>
-    </header>
+    <div class="wrap">
+      <div class="id">
+        <img class="avatar" src="https://avatars.githubusercontent.com/u/1739848?v=4" alt="Jared Burrows" width="104" height="104" fetchpriority="high">
+        <div class="id-text">
+          <h1>Jared Burrows</h1>
+          <p class="bio">Software engineer with 10+ years building mobile, cross-platform, and cloud products for Adobe, Google, Microsoft, Nike, NBCUniversal, Yahoo, and Northrop Grumman. I specialize in Android and Kotlin development, shipping award-winning apps used by millions. Open-source maintainer and conference speaker, including Droidcon.</p>
+        </div>
+        <div class="meta">
+          <span id="gh-followers">500+ followers on GitHub</span><span class="dot">·</span><a href="mailto:jaredsburrows@gmail.com">email me</a>
+        </div>
+      </div>
+      <nav>
+        <a href="https://blog.jaredsburrows.com" title="View my blog posts" target="_blank" rel="noopener">
+          <span class="t">Blog</span>
+          <span class="d">Writing on Android, Gradle and engineering practice</span>
+          <span class="ar">→</span>
+        </a>
+        <a href="https://www.burrowsapps.com" title="View my mobile applications on BurrowsApps.com" target="_blank" rel="noopener">
+          <span class="t">Mobile apps</span>
+          <span class="d">Published Android apps at BurrowsApps</span>
+          <span class="ar">→</span>
+        </a>
+        <a href="https://github.com/jaredsburrows" title="View my open source contributions" target="_blank" rel="noopener">
+          <span class="t">GitHub</span>
+          <span class="d">gradle-license-plugin, android-gif-search &amp; 50+ repos</span>
+          <span class="ar">→</span>
+        </a>
+        <a href="https://x.com/jaredsburrows" title="View my posts on X" target="_blank" rel="noopener">
+          <span class="t">X / Twitter</span>
+          <span class="d">@jaredsburrows</span>
+          <span class="ar">→</span>
+        </a>
+        <a href="https://www.linkedin.com/in/jaredsburrows" title="View my résumé" target="_blank" rel="noopener">
+          <span class="t">LinkedIn</span>
+          <span class="d">Résumé &amp; experience</span>
+          <span class="ar">→</span>
+        </a>
+        <a href="https://stackoverflow.com/users/950427/jared-burrows" title="View my technical answers" target="_blank" rel="noopener">
+          <span class="t">Stack Overflow</span>
+          <span class="d">Technical answers</span>
+          <span class="ar">→</span>
+        </a>
+      </nav>
+      <div class="talks">
+        <h2>Presentations</h2>
+        <div id="talks-list"></div>
+        <p id="talks-error" class="vn" hidden>Couldn't load talks.js — <a href="https://jaredsburrows.com/presentations/" style="color:inherit">view presentations</a>.</p>
+      </div>
+      <footer>
+        <span class="yr" id="copyright">© 2026</span>
+      </footer>
+    </div>
+    <script src="static/js/talks.js"></script>
+    <script src="static/js/home.js"></script>
   </body>
 </html>
