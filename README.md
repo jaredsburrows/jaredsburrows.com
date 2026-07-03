@@ -6,26 +6,19 @@ My blog, presentations, GitHub, and social links.
 [![Build](https://github.com/jaredsburrows/jaredsburrows.com/workflows/build/badge.svg)](https://github.com/jaredsburrows/jaredsburrows.com/actions)
 [![Twitter Follow](https://img.shields.io/twitter/follow/jaredsburrows.svg?style=social)](https://twitter.com/jaredsburrows)
 
-Personal website
-
-### Install dependencies
-
-```
-bundle install
-```
-
-### Update dependencies
-
-```
-bundle config set path 'vendor/bundle'
-bundle update
-```
+Personal website — fully static, no build step. GitHub Pages serves the repo as-is (`.nojekyll`).
 
 ### Preview the website
 
+Open `index.html` in a browser, or serve the directory:
+
 ```
-bundle exec jekyll serve
+python3 -m http.server
 ```
+
+### Add a talk
+
+Add one entry to `static/js/talks.js`.
 
 License
 =======
