@@ -127,19 +127,28 @@ nav .ar {
   color: #7a776f;
 }
 
-.talks a {
+.talk {
+  border-bottom: 1px solid #262521;
+}
+
+.talk-row {
   display: grid;
-  grid-template-columns: 76px 1fr auto;
+  grid-template-columns: 76px 1fr auto auto;
   gap: 16px;
   align-items: baseline;
+  width: 100%;
+  margin: 0;
   padding: 13px 0;
-  border-bottom: 1px solid #262521;
-  text-decoration: none;
+  background: none;
+  border: 0;
+  font: inherit;
   color: inherit;
+  text-align: left;
+  cursor: pointer;
   transition: background 0.12s;
 }
 
-.talks a:hover {
+.talk-row:hover {
   background: #171715;
 }
 
@@ -158,6 +167,60 @@ nav .ar {
 .talks .vn {
   font-size: 12.5px;
   color: #8a877f;
+}
+
+.talks .tg {
+  font-size: 14px;
+  color: #57544d;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+.talk-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.25s ease;
+}
+
+.talk.open .talk-panel {
+  grid-template-rows: 1fr;
+}
+
+.talk-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.talk-body {
+  padding: 2px 0 18px;
+  margin-left: 92px;
+}
+
+.talk-body p {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #a8a59e;
+}
+
+.talk-body .talk-meta {
+  font-size: 12.5px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+.talk-body .talk-meta a {
+  color: #c9c6bf;
+  text-decoration: none;
+  border-bottom: 1px solid #3a3934;
+}
+
+.talk-body iframe {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 0;
+  border-radius: 6px;
+  background: #1a1a18;
+  margin: 14px 0 4px;
 }
 
 footer {
@@ -186,11 +249,20 @@ footer .yr {
     grid-column: 2;
   }
 
-  .talks a {
-    grid-template-columns: 76px 1fr;
+  .talk-row {
+    grid-template-columns: 76px 1fr auto;
   }
 
   .talks .vn {
     grid-column: 2;
+  }
+
+  .talks .tg {
+    grid-row: 1;
+    grid-column: 3;
+  }
+
+  .talk-body {
+    margin-left: 0;
   }
 }
