@@ -51,6 +51,8 @@
     var a = document.createElement('a');
     a.className = 'talk-ext';
     a.href = href;
+    a.target = '_blank';
+    a.rel = 'noopener';
 
     var img = document.createElement('img');
     img.src = thumb;
@@ -98,6 +100,8 @@
       meta.className = 'talk-meta';
       var a = document.createElement('a');
       a.href = talk.link;
+      a.target = '_blank';
+      a.rel = 'noopener';
       a.textContent = talk.where + (talk.location ? ' · ' + talk.location : '') + ' ↗';
       meta.appendChild(a);
       body.appendChild(meta);
