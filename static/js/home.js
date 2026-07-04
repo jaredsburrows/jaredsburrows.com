@@ -1,8 +1,8 @@
 (() => {
   'use strict';
 
-  // © year
-  document.getElementById('copyright').textContent = `© ${new Date().getFullYear()}`;
+  // © year — auto-updates the digits only; the wording lives in the HTML.
+  document.getElementById('year').textContent = new Date().getFullYear();
 
   // Live stats (fall back to baked-in text when offline/rate-limited).
   // Baked values match the live ones so the update is invisible unless
