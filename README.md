@@ -16,6 +16,9 @@ Open `index.html` in a browser, or serve the directory:
 python3 -m http.server
 ```
 
+If an edit doesn't show up, hard-refresh (Cmd+Shift+R) — the browser may
+cache JS/CSS between refreshes.
+
 ### Add a talk
 
 Add one entry to `static/js/talks.js`.
