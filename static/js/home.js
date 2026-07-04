@@ -2,7 +2,7 @@
   'use strict';
 
   // © year
-  document.getElementById('copyright').textContent = `© ${new Date().getFullYear()}`;
+  document.getElementById('copyright').textContent = `Jared Burrows © ${new Date().getFullYear()}`;
 
   // Live stats (fall back to baked-in text when offline/rate-limited).
   // Baked values match the live ones so the update is invisible unless
