@@ -42,3 +42,6 @@ jobs:
 
       - name: Check JavaScript syntax
         run: for f in static/js/*.js; do node --check "$f"; done
+
+      - name: Validate talks data
+        run: node .github/validate-talks.js
