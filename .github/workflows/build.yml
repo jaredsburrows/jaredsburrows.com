@@ -38,7 +38,7 @@ jobs:
         run: npm install --no-save vnu-jar
 
       - name: Validate HTML
-        run: java -jar node_modules/vnu-jar/build/dist/vnu.jar index.html
+        run: java -jar node_modules/vnu-jar/build/dist/vnu.jar index.html 404.html
 
       - name: Check JavaScript syntax
         run: for f in static/js/*.js; do node --check "$f"; done
