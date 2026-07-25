@@ -5,6 +5,12 @@
   "name": "jaredsburrows-com",
   "account_id": "23fd1f78e6c723b48b52bd073092907a",
   "compatibility_date": "2026-07-25",
+  // The jaredsburrows.com/* zone route is managed in the dashboard: attaching
+  // it (or a custom domain) from wrangler needs zone-level token permissions,
+  // and the CI token is deliberately scoped to Workers Scripts only.
+  // Keep the workers.dev route off (matches the dashboard setting; deploys
+  // would otherwise re-enable it).
+  "workers_dev": false,
   "assets": {
     "directory": ".",
     "not_found_handling": "404-page"
