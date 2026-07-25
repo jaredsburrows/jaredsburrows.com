@@ -1,0 +1,12 @@
+{
+  // Assets-only Worker: no server code, Cloudflare just serves the files in
+  // this directory from its edge. Requests to static assets are not billed
+  // as Worker invocations.
+  "name": "jaredsburrows-com",
+  "account_id": "23fd1f78e6c723b48b52bd073092907a",
+  "compatibility_date": "2026-07-25",
+  "assets": {
+    "directory": ".",
+    "not_found_handling": "404-page"
+  }
+}

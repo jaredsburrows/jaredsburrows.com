@@ -23,10 +23,13 @@ jobs:
   checks:
     name: Checks
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
       - name: Checkout Project
         uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Configure JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v5.6.0
@@ -45,3 +48,8 @@ jobs:
 
       - name: Validate talks data
         run: node .github/validate-talks.js
+
+      # Credential-less config/asset validation: proves `wrangler deploy` would succeed
+      # without ever exposing the Cloudflare token to PR-triggered runs.
+      - name: Validate Cloudflare config (dry run)
+        run: npx --yes wrangler deploy --dry-run

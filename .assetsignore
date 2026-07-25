@@ -1,0 +1,14 @@
+.editorconfig
+.git
+.gitattributes
+.gitignore
+.github
+.idea
+.nojekyll
+.wrangler
+node_modules
+CNAME
+LICENSE
+README.md
+wrangler.jsonc
+**/.DS_Store
