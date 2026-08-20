@@ -1,0 +1,11 @@
+# Consumed by Cloudflare (not served): real 301s for pre-redesign talk URLs.
+# The meta-refresh stubs stay in the repo for the GitHub Pages mirror, which
+# ignores this file.
+/presentations / 301
+/presentations/ / 301
+/make-your-build-great-again / 301
+/make-your-build-great-again/ / 301
+/the-road-to-single-dex / 301
+/the-road-to-single-dex/ / 301
+/the-road-to-single-dex-sf / 301
+/the-road-to-single-dex-sf/ / 301
