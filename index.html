@@ -4,11 +4,16 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- Lets the browser paint the right background before home.css arrives
+         (the stylesheet re-declares color-scheme on :root). -->
+    <meta name="color-scheme" content="light dark">
     <!-- Mirrors the _headers CSP (applied by Cloudflare only) so the GitHub Pages
          mirror gets it too; frame-ancestors is header-only and omitted here. -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://*.googletagmanager.com; style-src 'self' 'unsafe-inline'; img-src 'self' https://gravatar.com https://*.googletagmanager.com https://*.google-analytics.com; connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://api.github.com https://api.stackexchange.com; frame-src https://*.googletagmanager.com; object-src 'none'; base-uri 'none'; form-action 'none'">
-    <link rel="preconnect" href="https://gravatar.com">
-    <link rel="preconnect" href="https://api.github.com" crossorigin>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://*.googletagmanager.com; style-src 'self' 'unsafe-inline'; img-src 'self' https://*.googletagmanager.com https://*.google-analytics.com https://img.youtube.com https://speakerd.s3.amazonaws.com; connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://api.github.com https://api.stackexchange.com; frame-src https://*.googletagmanager.com https://www.youtube-nocookie.com https://speakerdeck.com; object-src 'none'; base-uri 'none'; form-action 'none'">
+
+    <title>Jared Burrows — Software Engineer</title>
+    <meta name="description" content="Jared Burrows — software engineer specializing in Android and Kotlin. Open-source maintainer (gradle-license-plugin), conference speaker, blog, talks and projects.">
+    <link rel="preload" href="static/image/avatar.webp" as="image" fetchpriority="high">
 
     <!-- Global site tag (gtag.js) - Google Analytics -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-69EHJ9K7LX"></script>
@@ -28,15 +33,19 @@
     })(window,document,'script','dataLayer','GTM-5DMBGS2');</script>
     <!-- End Google Tag Manager -->
 
-    <title>Jared Burrows — Software Engineer</title>
-    <meta name="description" content="Jared Burrows — software engineer specializing in Android and Kotlin. Open-source maintainer (gradle-license-plugin), conference speaker, blog, talks and projects.">
+    <!-- The stylesheet stays below the analytics snippets: an inline script that
+         follows a pending stylesheet waits for it, which would delay gtm.js. -->
     <link rel="stylesheet" href="static/css/home.css" type="text/css">
     <link rel="shortcut icon" href="favicon.ico" type="image/x-icon">
     <link rel="icon" href="favicon.ico" type="image/x-icon">
     <link rel="canonical" href="https://jaredsburrows.com/">
-    <link rel="apple-touch-icon" href="https://gravatar.com/avatar/115b70e2ab7a0aa826f998ee7f2b34baf32da88f0bf932ab5987d1350a50c85e?s=180">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
     <meta name="theme-color" content="#121211" media="(prefers-color-scheme: dark)">
     <meta name="theme-color" content="#faf9f7" media="(prefers-color-scheme: light)">
+    <!-- Deferred: fetched in parallel with the page, run in order after parse
+         (talks.js defines window.TALKS for home.js). -->
+    <script src="static/js/talks.js" defer></script>
+    <script src="static/js/home.js" defer></script>
 
     <!-- Schema Meta Data - https://Schema.org/ -->
     <script type="application/ld+json">
@@ -45,7 +54,7 @@
         "@type": "Person",
         "name": "Jared Burrows",
         "url": "https://jaredsburrows.com/",
-        "image": "https://gravatar.com/avatar/115b70e2ab7a0aa826f998ee7f2b34baf32da88f0bf932ab5987d1350a50c85e?s=460",
+        "image": "https://jaredsburrows.com/static/image/avatar-460.jpg",
         "jobTitle": "Software Engineer",
         "knowsAbout": ["Android", "Kotlin", "Java", "Gradle"],
         "sameAs": [
@@ -54,7 +63,8 @@
           "https://github.com/jaredsburrows",
           "https://x.com/jaredsburrows",
           "https://www.linkedin.com/in/jaredsburrows",
-          "https://stackoverflow.com/users/950427/jared-burrows"
+          "https://stackoverflow.com/users/950427/jared-burrows",
+          "https://speakerdeck.com/jaredsburrows"
         ]
       }
     </script>
@@ -65,8 +75,8 @@
     <meta property="og:title" content="Jared Burrows — Software Engineer">
     <meta property="og:description" content="Android &amp; Kotlin engineer. Open-source maintainer, conference speaker. Blog, talks and projects.">
     <meta property="og:site_name" content="Jared Burrows">
-    <meta property="og:url" content="https://jaredsburrows.com">
-    <meta property="og:image" content="https://gravatar.com/avatar/115b70e2ab7a0aa826f998ee7f2b34baf32da88f0bf932ab5987d1350a50c85e?s=460">
+    <meta property="og:url" content="https://jaredsburrows.com/">
+    <meta property="og:image" content="https://jaredsburrows.com/static/image/avatar-460.jpg">
     <meta property="og:image:width" content="460">
     <meta property="og:image:height" content="460">
     <meta property="og:image:alt" content="Portrait of Jared Burrows">
@@ -78,9 +88,9 @@
     <meta name="twitter:domain" content="jaredsburrows.com">
     <meta name="twitter:title" content="Jared Burrows — Software Engineer">
     <meta name="twitter:description" content="Android &amp; Kotlin engineer. Open-source maintainer, conference speaker. Blog, talks and projects.">
-    <meta name="twitter:image" content="https://gravatar.com/avatar/115b70e2ab7a0aa826f998ee7f2b34baf32da88f0bf932ab5987d1350a50c85e?s=460">
+    <meta name="twitter:image" content="https://jaredsburrows.com/static/image/avatar-460.jpg">
     <meta name="twitter:image:alt" content="Portrait of Jared Burrows">
-    <meta name="twitter:url" content="https://jaredsburrows.com">
+    <meta name="twitter:url" content="https://jaredsburrows.com/">
     <!-- End Twitter Meta -->
   </head>
   <body>
@@ -92,7 +102,7 @@
 
     <main class="wrap">
       <div class="id">
-        <img class="avatar" src="https://gravatar.com/avatar/115b70e2ab7a0aa826f998ee7f2b34baf32da88f0bf932ab5987d1350a50c85e?s=208" alt="Jared Burrows" width="104" height="104" fetchpriority="high">
+        <img class="avatar" src="static/image/avatar.webp" alt="Jared Burrows" width="104" height="104" fetchpriority="high" decoding="async">
         <div class="id-text">
           <h1>Jared Burrows</h1>
           <p class="bio">Software engineer with 10+ years building mobile, cross-platform, and cloud products for Adobe, Google, Microsoft, Nike, NBCUniversal, Yahoo, and Northrop Grumman. I specialize in Android and Kotlin development, shipping award-winning apps used by millions. Open-source maintainer and conference speaker, including Droidcon.</p>
@@ -146,7 +156,5 @@
         <span class="yr">Jared Burrows © <span id="year">2026</span></span>
       </footer>
     </main>
-    <script src="static/js/talks.js"></script>
-    <script src="static/js/home.js"></script>
   </body>
 </html>

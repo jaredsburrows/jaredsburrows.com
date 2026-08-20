@@ -1,5 +1,33 @@
+# Consumed by Cloudflare (not served); index.html mirrors the CSP as a meta tag
+# for the GitHub Pages mirror, which cannot send headers. Never set a header on
+# /* that another matching rule also sets — values from all matching rules join.
 /*
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://*.googletagmanager.com; style-src 'self' 'unsafe-inline'; img-src 'self' https://gravatar.com https://*.googletagmanager.com https://*.google-analytics.com; connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://api.github.com https://api.stackexchange.com; frame-src https://*.googletagmanager.com; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://*.googletagmanager.com; style-src 'self' 'unsafe-inline'; img-src 'self' https://*.googletagmanager.com https://*.google-analytics.com https://img.youtube.com https://speakerd.s3.amazonaws.com; connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://api.github.com https://api.stackexchange.com; frame-src https://*.googletagmanager.com https://www.youtube-nocookie.com https://speakerdeck.com; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+
+# Without these rules everything is served max-age=0 and revalidated on every
+# page view. URLs are unversioned, so code TTLs stay short (changes converge
+# within the hour); images and icons change rarely and can wait a week.
+/static/css/*
+  Cache-Control: public, max-age=3600
+
+/static/js/*
+  Cache-Control: public, max-age=3600
+
+/static/image/*
+  Cache-Control: public, max-age=604800
+
+/favicon.ico
+  Cache-Control: public, max-age=604800
+
+/apple-touch-icon.png
+  Cache-Control: public, max-age=604800
+
+# Homepage-only preload hints: Cloudflare turns these into 103 Early Hints when
+# that zone setting is on, and browsers honor them from the response headers
+# either way — both start the fetch before HTML parsing.
+/
+  Link: </static/css/home.css>; rel=preload; as=style
+  Link: </static/image/avatar.webp>; rel=preload; as=image

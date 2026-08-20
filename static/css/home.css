@@ -7,8 +7,9 @@
   --text: light-dark(#1c1b19, #e8e6e1);
   --text-2: light-dark(#55524b, #a8a59e);
   --text-3: light-dark(#64615a, #8a877f);
-  --text-4: light-dark(#6e6a62, #7a776f);
-  --faint: light-dark(#757168, #57544d);
+  /* Dark values sit just above the 4.5:1 WCAG AA floor on --bg for 13px text. */
+  --text-4: light-dark(#6e6a62, #858279);
+  --faint: light-dark(#757168, #807d75);
   --dot: light-dark(#d5d1c9, #3a3934);
   --link: light-dark(#3f3c36, #c9c6bf);
   --link-underline: light-dark(#cfcbc3, #3a3934);
@@ -130,6 +131,7 @@ nav .t {
 nav .d {
   font-size: 14px;
   color: var(--text-3);
+  text-wrap: pretty;
 }
 
 nav .ar {
@@ -191,6 +193,7 @@ nav .ar {
 .talks .vn {
   font-size: 13px;
   color: var(--text-3);
+  text-wrap: pretty;
 }
 
 .talks .tg {

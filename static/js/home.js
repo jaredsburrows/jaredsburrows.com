@@ -132,17 +132,22 @@
     inner.append(body);
     const panel = el('div', 'talk-panel');
     panel.append(inner);
+    // The collapse is visual-only (0fr rows + overflow hidden), so inert keeps
+    // the hidden links/iframes out of the tab order and accessibility tree.
+    panel.inert = true;
 
     let loaded = false;
     row.addEventListener('click', () => {
       const open = item.classList.toggle('open');
       row.setAttribute('aria-expanded', String(open));
+      panel.inert = !open;
       toggle.textContent = open ? '−' : '+';
       if (!open) return;
       // accordion: close any other open talk
       for (const other of list.querySelectorAll('.talk.open')) {
         if (other === item) continue;
         other.classList.remove('open');
+        other.querySelector('.talk-panel').inert = true;
         const otherRow = other.querySelector('.talk-row');
         otherRow.setAttribute('aria-expanded', 'false');
         otherRow.querySelector('.tg').textContent = '+';
