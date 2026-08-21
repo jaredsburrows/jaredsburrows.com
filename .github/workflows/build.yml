@@ -49,6 +49,9 @@ jobs:
       - name: Validate talks data
         run: node .github/validate-talks.js
 
+      - name: Validate site invariants
+        run: node .github/validate-site.js
+
       # Credential-less config/asset validation: proves `wrangler deploy` would succeed
       # without ever exposing the Cloudflare token to PR-triggered runs.
       - name: Validate Cloudflare config (dry run)
