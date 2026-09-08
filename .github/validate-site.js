@@ -6,6 +6,8 @@
 //   blocked in production for a month this way)
 // - home.js targeting an id index.html no longer has (emptied the live
 //   Presentations section in July 2026)
+// - an embed iframe built without an explicit referrerpolicy, which broke
+//   both YouTube talks with Error 153 in September 2026
 // - a page or _headers preload referencing a local file that doesn't exist
 // - two _headers rules setting the same header on overlapping paths
 //   (values from all matching rules comma-join into one broken header)
@@ -94,6 +96,39 @@ for (const [, origin] of indexHtml.matchAll(/<iframe[^>]+src="(https:\/\/[^"/]+)
   requireCsp('frame-src', origin, 'index.html embeds it as an iframe');
 }
 
+// --- Embed referer: the talk iframes are cross-origin, and YouTube's player
+// refuses to configure without a referer. The document Referrer-Policy is not
+// enough — an unfixed Cloudflare zone rule overrides it (see .team/SECURITY.md)
+// — so home.js must set the attribute on the frames it builds, in live code:
+// comments are stripped first, so a commented-out call cannot satisfy this.
+// String literals are matched before comment openers so URLs keep their //.
+const stripComments = (source) => source.replace(
+  /`(?:\\[\s\S]|[^\\`])*`|'(?:\\.|[^\\'\n])*'|"(?:\\.|[^\\"\n])*"|\/\*[\s\S]*?\*\/|\/\/.*/g,
+  (match) => (match.startsWith('/') ? ' ' : match));
+const liveHomeJs = stripComments(homeJs);
+
+// Equal-or-tighter than the _headers policy and still referer enough for
+// YouTube. Anything else is a defect: unsafe-url, no-referrer-when-downgrade,
+// origin-when-cross-origin and origin leak more, while no-referrer and
+// same-origin send nothing cross-origin — Error 153 again.
+const allowedReferrerPolicies = ['strict-origin-when-cross-origin', 'strict-origin'];
+const referrerPolicies = [
+  /setAttribute\(\s*(['"`])referrerpolicy\1\s*,\s*(['"`])(?<value>[^'"`]*)\2\s*\)/gi,
+  /\.referrerPolicy\s*=\s*(['"`])(?<value>[^'"`]*)\1/g,
+].flatMap((pattern) => [...liveHomeJs.matchAll(pattern)]
+  .map((match) => match.groups.value.trim().toLowerCase()));
+
+// Gate on the embed hosts above, not on URL path shapes: rewriting a path must
+// not silently switch this invariant off.
+const embedOrigins = embedHosts.filter(([directive]) => directive === 'frame-src').map(([, origin]) => origin);
+if (embedOrigins.some((origin) => liveHomeJs.includes(origin))
+    && !referrerPolicies.some((value) => allowedReferrerPolicies.includes(value))) {
+  bad(`home.js builds cross-origin embed iframes without a live setAttribute('referrerpolicy', 'strict-origin-when-cross-origin') — YouTube talk embeds break with Error 153 when the document Referrer-Policy suppresses the referer`);
+}
+for (const policy of new Set(referrerPolicies.filter((value) => !allowedReferrerPolicies.includes(value)))) {
+  bad(`home.js sets referrerpolicy '${policy}' on an embed iframe — only ${allowedReferrerPolicies.join(' or ')} may be used (weaker values leak more than the origin; no-referrer/same-origin bring back Error 153)`);
+}
+
 // --- HTML <-> JS contract: ids home.js looks up must exist in index.html.
 for (const [, id] of homeJs.matchAll(/getElementById\('([^']+)'\)/g)) {
   if (!indexHtml.includes(`id="${id}"`)) {
@@ -169,4 +204,4 @@ if (errors.length > 0) {
   for (const message of errors) console.error(`  - ${message}`);
   process.exit(1);
 }
-console.log('✓ site invariants hold (CSP parity + coverage, id contract, file references, _headers overlap, _redirects stubs)');
+console.log('✓ site invariants hold (CSP parity + coverage, embed referer, id contract, file references, _headers overlap, _redirects stubs)');

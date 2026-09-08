@@ -52,12 +52,18 @@
     return node;
   };
 
-  const embed = (src, title) => {
+  const embed = (src, title, allow) => {
     const frame = el('iframe');
     frame.src = src;
     frame.title = title;
     frame.setAttribute('loading', 'lazy');
-    frame.setAttribute('allow', 'fullscreen; encrypted-media; picture-in-picture');
+    // Least privilege, per provider: callers delegate only the capabilities
+    // their player uses, so the slide deck gets no EME (a Widevine
+    // device-identifier surface) or picture-in-picture. Not a live hole —
+    // `allow` can only hand a frame permissions this document already holds.
+    // `allowfullscreen` below is the legacy alias, and only applies when
+    // `allow` omits fullscreen; both players use it, so both lists keep it.
+    frame.setAttribute('allow', allow);
     frame.setAttribute('allowfullscreen', '');
     // Not redundant with the _headers Referrer-Policy: it works around an
     // unfixed Cloudflare zone rule (an open defect, see .team/SECURITY.md)
@@ -85,14 +91,16 @@
         ? card(`https://www.youtube.com/watch?v=${talk.youtube}`,
                `https://img.youtube.com/vi/${talk.youtube}/hqdefault.jpg`,
                'Watch on YouTube')
-        : embed(`https://www.youtube-nocookie.com/embed/${talk.youtube}`, `${talk.title} — video`));
+        : embed(`https://www.youtube-nocookie.com/embed/${talk.youtube}`, `${talk.title} — video`,
+                'fullscreen; encrypted-media; picture-in-picture'));
     }
     if (talk.speakerdeck) {
       body.append(LOCAL
         ? card(`https://speakerdeck.com/player/${talk.speakerdeck}`,
                `https://speakerd.s3.amazonaws.com/presentations/${talk.speakerdeck}/slide_0.jpg`,
                'View slides on Speaker Deck')
-        : embed(`https://speakerdeck.com/player/${talk.speakerdeck}`, `${talk.title} — slides`));
+        : embed(`https://speakerdeck.com/player/${talk.speakerdeck}`, `${talk.title} — slides`,
+                'fullscreen'));
     }
   };
 
