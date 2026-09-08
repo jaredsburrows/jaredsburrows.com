@@ -52,6 +52,9 @@ jobs:
       - name: Validate site invariants
         run: node .github/validate-site.js
 
+      - name: Test site invariant validator
+        run: node .github/validate-site.test.js
+
       # Credential-less config/asset validation: proves `wrangler deploy` would succeed
       # without ever exposing the Cloudflare token to PR-triggered runs.
       - name: Validate Cloudflare config (dry run)
