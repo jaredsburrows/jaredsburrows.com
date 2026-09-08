@@ -250,3 +250,6 @@ hs_err_pid*
 
 ### Cloudflare Wrangler ###
 .wrangler/
+
+### Team Burrows scratch (local planning notes, not part of the site) ###
+.team/
