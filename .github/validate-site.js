@@ -6,6 +6,8 @@
 //   blocked in production for a month this way)
 // - home.js targeting an id index.html no longer has (emptied the live
 //   Presentations section in July 2026)
+// - an embed iframe built without an explicit referrerpolicy, which broke
+//   both YouTube talks with Error 153 in September 2026
 // - a page or _headers preload referencing a local file that doesn't exist
 // - two _headers rules setting the same header on overlapping paths
 //   (values from all matching rules comma-join into one broken header)
@@ -94,6 +96,16 @@ for (const [, origin] of indexHtml.matchAll(/<iframe[^>]+src="(https:\/\/[^"/]+)
   requireCsp('frame-src', origin, 'index.html embeds it as an iframe');
 }
 
+// --- Embed referer: the talk iframes are cross-origin, and YouTube's player
+// refuses to configure without a referer. The document Referrer-Policy is not
+// enough — a Cloudflare zone rule can override it — so home.js must set the
+// attribute on the frames it builds.
+const embedSources = ['https://www.youtube-nocookie.com/embed/', 'https://speakerdeck.com/player/'];
+if (embedSources.some((source) => homeJs.includes(source))
+    && !homeJs.includes("setAttribute('referrerpolicy', 'strict-origin-when-cross-origin')")) {
+  bad(`home.js builds cross-origin embed iframes without setAttribute('referrerpolicy', 'strict-origin-when-cross-origin') — YouTube talk embeds break with Error 153 when the document Referrer-Policy suppresses the referer`);
+}
+
 // --- HTML <-> JS contract: ids home.js looks up must exist in index.html.
 for (const [, id] of homeJs.matchAll(/getElementById\('([^']+)'\)/g)) {
   if (!indexHtml.includes(`id="${id}"`)) {
@@ -169,4 +181,4 @@ if (errors.length > 0) {
   for (const message of errors) console.error(`  - ${message}`);
   process.exit(1);
 }
-console.log('✓ site invariants hold (CSP parity + coverage, id contract, file references, _headers overlap, _redirects stubs)');
+console.log('✓ site invariants hold (CSP parity + coverage, embed referer, id contract, file references, _headers overlap, _redirects stubs)');
