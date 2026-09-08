@@ -59,6 +59,11 @@
     frame.setAttribute('loading', 'lazy');
     frame.setAttribute('allow', 'fullscreen; encrypted-media; picture-in-picture');
     frame.setAttribute('allowfullscreen', '');
+    // Not redundant with the _headers Referrer-Policy: a Cloudflare zone rule
+    // rewrites the document policy to same-origin, which strips the referer
+    // cross-origin and leaves YouTube's player at Error 153. The iframe
+    // attribute overrides the document policy for these requests.
+    frame.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
     return frame;
   };
 
