@@ -695,8 +695,17 @@ const NEGOTIATED_PATH = '/';
 for (const rule of rules.filter((candidate) => globRegex(candidate.pattern).test(NEGOTIATED_PATH))) {
   for (const { name, value } of rule.set.filter((header) => header.name.toLowerCase() === 'cache-control')) {
     for (const directive of value.split(',')) {
-      const ttl = directive.trim().match(/^(max-age|s-maxage)\s*=\s*(\d+)$/i);
-      if (ttl && Number(ttl[2]) > 0) {
+      // Any delta-seconds that is not zero, however it is spelled. The check
+      // used to require digits only, which let `max-age=60.0` through (BUGS.md
+      // B4) — RFC 9111's grammar is 1*DIGIT, so a strict cache ignores that
+      // directive entirely, but "strict" is not a property the edge guarantees
+      // and some implementations read the leading 60. The same argument covers
+      // `+600` and `6e2`, so the test is "is this zero?" rather than a list of
+      // spellings: a value that no cache honours costs a build on a header that
+      // had no business being on / anyway, while a value one cache honours is
+      // the whole finding.
+      const ttl = directive.trim().match(/^(max-age|s-maxage)\s*=\s*(\S+)$/i);
+      if (ttl && Number(ttl[2]) !== 0) {
         bad(`_headers rule ${rule.pattern} sets ${name}: ${value} on ${NEGOTIATED_PATH} — ${NEGOTIATED_PATH} serves HTML or markdown depending on Accept, and Cloudflare's cache ignores Vary, so a stored copy is handed to every client whatever it asked for: one agent request would leave the markdown homepage in the edge cache for browsers and Googlebot. ${NEGOTIATED_PATH} must keep revalidating (max-age=0)`);
       }
     }

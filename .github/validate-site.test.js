@@ -728,6 +728,17 @@ testFiles('a positive max-age on a glob that also matches "/" fails closed',
       .replace('/*\n  X-Content-Type-Options: nosniff', '/*\n  Cache-Control: public, max-age=3600\n  X-Content-Type-Options: nosniff') },
   1, "Cloudflare's cache ignores Vary");
 
+// B4: delta-seconds is 1*DIGIT, so a fractional max-age is not a legal TTL —
+// but an edge that reads the leading digits stores / for a minute all the same,
+// and the check must not depend on which kind of cache is in front of the site.
+// `+600` and `6e2` are the same argument, which is why the check asks whether
+// the value is zero rather than listing the spellings of not-zero.
+for (const ttl of ['60.0', '+600', '6e2', '0x10']) {
+  testFiles(`a max-age of "${ttl}" on the "/" rule fails closed`,
+    { '_headers': originalHeaders.replace(HOMEPAGE_RULE, `\n/\n  Cache-Control: public, max-age=${ttl}\n  Link: </static/css/home.css>; rel=preload; as=style`) },
+    1, "Cloudflare's cache ignores Vary");
+}
+
 // Zero is not a TTL: pinning the Workers Assets default on / states what
 // already happens and must keep passing, or the check would forbid the very
 // fix it is asking for.
