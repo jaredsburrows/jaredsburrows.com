@@ -5,8 +5,9 @@
   document.getElementById('year').textContent = `${new Date().getFullYear()}`;
 
   // Live stats (fall back to baked-in text when offline/rate-limited).
-  // Baked values match the live ones so the update is invisible unless
-  // a count actually changed; en-US formatting keeps them identical.
+  // The baked-in numbers are a hand-maintained snapshot — no build step
+  // regenerates them — so they drift, and this swap is visible whenever they
+  // have. The <head> preconnect hints exist to make it land sooner.
   (async () => {
     try {
       const response = await fetch('https://api.github.com/users/jaredsburrows');
