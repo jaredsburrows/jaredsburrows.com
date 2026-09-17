@@ -387,7 +387,33 @@ testFiles('a trailing comma in the JSON-LD block fails closed', {
 testFiles('a JSON-LD @context that is not schema.org fails closed', {
   'index.html': mutateJsonLd((body) =>
     body.replace(/("@context"\s*:\s*)"[^"]*"/, '$1"https://example.org"')),
-}, 1, 'must name schema.org');
+}, 1, 'it must resolve to the schema.org host');
+
+// A lookalike host is the typo this guard is actually for: every one of these
+// CONTAINS the string "schema.org", so a substring test passes them while a
+// consumer resolves the context to a host that serves no vocabulary at all.
+for (const lookalike of [
+  'https://schema.org.org',
+  'https://schema.org.example.com',
+  'https://notschema.org',
+]) {
+  testFiles(`a JSON-LD @context of ${lookalike} fails closed`, {
+    'index.html': mutateJsonLd((body) =>
+      body.replace(/("@context"\s*:\s*)"[^"]*"/, `$1"${lookalike}"`)),
+  }, 1, 'it must resolve to the schema.org host');
+}
+
+// ...and the guard must not over-tighten: the legacy http:// form and an array
+// context are both real, both resolve to the schema.org host, and must pass.
+testFiles('a JSON-LD @context of http://schema.org passes', {
+  'index.html': mutateJsonLd((body) =>
+    body.replace(/("@context"\s*:\s*)"[^"]*"/, '$1"http://schema.org"')),
+}, 0);
+
+testFiles('a JSON-LD @context array containing schema.org passes', {
+  'index.html': mutateJsonLd((body) =>
+    body.replace(/("@context"\s*:\s*)"[^"]*"/, '$1["https://example.org/ctx", "https://schema.org"]')),
+}, 0);
 
 // More than one block is the shape this site is heading for (a second block
 // alongside the first), so each has to be parsed and named on its own.

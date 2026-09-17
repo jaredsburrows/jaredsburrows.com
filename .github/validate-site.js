@@ -248,11 +248,32 @@ for (const [, reference] of headers.matchAll(/Link:\s*<([^>]+)>/g)) {
 
 // --- JSON-LD: structured data no browser renders and vnu does not read (it
 // validates the script element, never its contents), so a break shows up
-// nowhere until the search result quietly loses its rich data. One trailing comma and a search engine drops the entire
-// block; an @context that does not name schema.org leaves every field in it
-// unrecognized vocabulary. Same-origin URLs inside a block are references like
-// any other — the image field carries the same absolute avatar URL the meta
-// tags do, and a rename has to move all of them together.
+// nowhere until the search result quietly loses its rich data. One trailing
+// comma and a search engine drops the entire block; an @context that does not
+// name schema.org leaves every field in it unrecognized vocabulary.
+// Same-origin URLs inside a block are references like any other — the image
+// field carries the same absolute avatar URL the meta tags do, and a rename
+// has to move all of them together.
+//
+// Every block is parsed and reported on its own: a page carries more than one
+// (a ProfilePage plus a WebSite site name), and a check that stopped at the
+// first match would cover the second never at all. Everything below reads the
+// PARSED object, never the file text — the blocks sit next to HTML comments
+// documenting what was deliberately left out, so `grep SearchAction
+// index.html` prints 1 on a page whose JSON-LD contains no such thing, and an
+// invariant written as a text search would fire on the comment.
+//
+// @context is matched by URL host, not by substring: 'https://schema.org.org'
+// and 'https://schema.org.example.com' both contain the string and both mean
+// nothing to a consumer, so both have to fail here.
+const namesSchemaOrg = (context) => [context].flat().some((value) => {
+  if (typeof value !== 'string') return false;
+  try {
+    return ['schema.org', 'www.schema.org'].includes(new URL(value).host);
+  } catch {
+    return false;
+  }
+});
 for (const [file, html] of [['index.html', indexHtml], ['404.html', notFoundHtml]]) {
   const blocks = [...html.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi)];
   blocks.forEach(([, body], index) => {
@@ -265,9 +286,8 @@ for (const [file, html] of [['index.html', indexHtml], ['404.html', notFoundHtml
       return;
     }
     for (const node of Array.isArray(data) ? data : [data]) {
-      const context = [node?.['@context']].flat().filter((value) => typeof value === 'string').join(' ');
-      if (!context.includes('schema.org')) {
-        bad(`${name} has @context ${JSON.stringify(node?.['@context'] ?? null)} — it must name schema.org or every field in the block is unrecognized vocabulary`);
+      if (!namesSchemaOrg(node?.['@context'])) {
+        bad(`${name} has @context ${JSON.stringify(node?.['@context'] ?? null)} — it must resolve to the schema.org host (a lookalike like schema.org.org parses fine and means nothing) or every field in the block is unrecognized vocabulary`);
       }
     }
     checkSameOriginUrls(name, data);
