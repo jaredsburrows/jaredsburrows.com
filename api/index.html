@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>Talks API — jaredsburrows.com</title>
+    <meta name="description" content="A small read-only JSON API over the conference talks listed on jaredsburrows.com, described by OpenAPI 3.1 and discoverable through an RFC 9727 API catalog.">
+    <link rel="stylesheet" href="/static/css/home.css" type="text/css">
+    <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+    <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    <meta name="theme-color" content="#121211" media="(prefers-color-scheme: dark)">
+    <meta name="theme-color" content="#faf9f7" media="(prefers-color-scheme: light)">
+    <!-- Page-specific and tiny: kept here rather than in home.css so the
+         homepage's render-blocking stylesheet does not carry rules only this
+         page uses. style-src allows 'unsafe-inline' (see _headers). -->
+    <style>
+      .api pre {
+        overflow-x: auto;
+        padding: 0.75rem 1rem;
+        border: 1px solid currentColor;
+        border-radius: 4px;
+        opacity: 0.95;
+      }
+      .api dt {
+        font-weight: 600;
+        margin-top: 1rem;
+      }
+      .api dd {
+        margin-left: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap api">
+      <div class="id">
+        <div class="id-text">
+          <h1>Talks API</h1>
+          <p class="bio">
+            A small read-only JSON API over the conference talks listed on
+            <a href="/">jaredsburrows.com</a>. It is the same data that drives
+            the Presentations section of the homepage.
+          </p>
+        </div>
+      </div>
+
+      <h2>Endpoints</h2>
+      <dl>
+        <dt><code>GET /api/talks.json</code></dt>
+        <dd>Every talk, newest first. Small and unpaginated by design.</dd>
+
+        <dt><code>GET /api/health.json</code></dt>
+        <dd>
+          An availability probe. Because this API is static files on a CDN, a
+          200 here means the edge is serving the site — it is not a check of
+          downstream dependencies, because there are none.
+        </dd>
+      </dl>
+
+      <h2>What this API is not</h2>
+      <p>
+        It is served as static assets from Cloudflare's edge, so
+        <code>GET</code> is the only method that does anything. There is no
+        write surface, no authentication, no API key and no rate limiting.
+        Responses are cacheable for an hour.
+      </p>
+
+      <h2>Example</h2>
+      <pre><code>$ curl https://jaredsburrows.com/api/talks.json
+
+{
+  "talks": [
+    {
+      "date": "2017-11-08",
+      "title": "The Road to Single Dex",
+      "where": "GDG SF Meetup",
+      "location": "San Francisco, CA, USA",
+      "link": "https://web.archive.org/...",
+      "speakerdeck": "f87003a516e24a9fb11fcc119e535450",
+      "description": ["..."]
+    }
+  ]
+}</code></pre>
+      <p>
+        Each talk carries <code>speakerdeck</code>, <code>youtube</code>, or
+        both. <code>date</code>, <code>title</code> and <code>where</code> are
+        always present; the rest are optional.
+      </p>
+
+      <h2>Machine-readable description</h2>
+      <p>
+        The API is described by
+        <a href="/api/openapi.json">an OpenAPI 3.1 document</a> and is
+        discoverable through the
+        <a href="/.well-known/api-catalog">API catalog</a> at
+        <code>/.well-known/api-catalog</code>, per
+        <a href="https://www.rfc-editor.org/rfc/rfc9727">RFC 9727</a>.
+      </p>
+
+      <div class="meta">
+        <a href="/">go to the homepage</a>
+      </div>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,28 @@
+{
+  "linkset": [
+    {
+      "anchor": "https://jaredsburrows.com/api",
+      "service-desc": [
+        {
+          "href": "https://jaredsburrows.com/api/openapi.json",
+          "type": "application/openapi+json",
+          "title": "OpenAPI 3.1 description of the Talks API"
+        }
+      ],
+      "service-doc": [
+        {
+          "href": "https://jaredsburrows.com/api/",
+          "type": "text/html",
+          "title": "Talks API documentation"
+        }
+      ],
+      "status": [
+        {
+          "href": "https://jaredsburrows.com/api/health.json",
+          "type": "application/json",
+          "title": "Availability probe"
+        }
+      ]
+    }
+  ]
+}

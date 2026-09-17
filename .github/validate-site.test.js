@@ -275,5 +275,63 @@ testFiles('the beacon requirement survives removing the gtag/gtm loads', (() => 
   return { ...dropped, 'index.html': neutralize(dropped['index.html']) };
 })(), 1, 'script-src does not allow https://static.cloudflareinsights.com');
 
+// --- RFC 9727 API catalog. The catalog, the OpenAPI description and
+// api/talks.json are three files that all restate the same facts, and nothing
+// at runtime notices when one drifts: a stale talks.json serves last year's
+// talks forever, and a catalog href to a deleted file is a 404 an agent finds
+// before a human does.
+const originalCatalog = fs.readFileSync(path.join(repoRoot, '.well-known/api-catalog'), 'utf8');
+const originalTalksJs = fs.readFileSync(path.join(repoRoot, 'static/js/talks.js'), 'utf8');
+assert.ok(originalCatalog.includes('https://jaredsburrows.com/api/openapi.json'),
+  'fixture assumption broken: the catalog no longer links api/openapi.json');
+assert.ok(originalHeaders.includes('application/linkset+json'),
+  'fixture assumption broken: _headers no longer sets the linkset content type');
+
+// The realistic drift: README says "add a talk by adding one entry to
+// talks.js", so the entry that never reaches api/talks.json is the regression
+// to catch.
+testFiles('a talk added to talks.js but not api/talks.json fails closed', {
+  'static/js/talks.js': originalTalksJs.replace(
+    'window.TALKS = [',
+    "window.TALKS = [\n  {\n    date: '2018-01-01',\n    title: 'Unpublished',\n    where: 'Nowhere',\n    youtube: 'aaaaaaaaaaa'\n  },"),
+}, 1, 'api/talks.json is out of sync');
+
+// The same drift from the other side: editing the JSON without the JS.
+testFiles('api/talks.json edited away from talks.js fails closed', {
+  'api/talks.json': JSON.stringify({ talks: [{ date: '1999-01-01', title: 'Drifted', where: 'Nowhere' }] }, null, 2),
+}, 1, 'api/talks.json is out of sync');
+
+// Without the content-type rule the catalog is served as whatever Cloudflare
+// infers for an extensionless file, and RFC 9727 §6.2 makes
+// application/linkset+json a MUST.
+testFiles('dropping the linkset content type from _headers fails closed', {
+  '_headers': originalHeaders.split('\n')
+    .filter((line) => !line.includes('application/linkset+json')).join('\n'),
+}, 1, 'application/linkset+json');
+
+// A catalog that does not parse is worse than no catalog: the well-known URI
+// exists, so a client stops looking.
+testFiles('a catalog that is not valid JSON fails closed', {
+  '.well-known/api-catalog': '{ "linkset": [ ',
+}, 1, 'is not valid JSON');
+
+// Every same-origin href must resolve, or the catalog advertises a 404.
+testFiles('a catalog href pointing at a missing file fails closed', {
+  '.well-known/api-catalog': originalCatalog.replace('/api/openapi.json', '/api/openapi-v2.json'),
+}, 1, 'references missing file');
+
+// An entry without an anchor has no link context, so nothing in it identifies
+// which API is being described.
+testFiles('a linkset entry without an anchor fails closed', {
+  '.well-known/api-catalog': JSON.stringify({ linkset: [{ 'service-doc': [{ href: 'https://jaredsburrows.com/api/' }] }] }, null, 2),
+}, 1, 'entry 1 has no anchor');
+
+// The OpenAPI document names the paths it describes; a renamed or deleted
+// endpoint file must not keep being advertised as one.
+testFiles('an openapi.json path with no file behind it fails closed', {
+  'api/openapi.json': fs.readFileSync(path.join(repoRoot, 'api/openapi.json'), 'utf8')
+    .replace('"/api/health.json"', '"/api/status.json"'),
+}, 1, 'openapi.json describes /api/status.json');
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

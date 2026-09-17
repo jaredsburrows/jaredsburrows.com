@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Validates cross-file invariants that node --check and vnu cannot see.
-// Every check below is a regression that actually shipped or nearly did:
+// Most checks below are a regression that actually shipped or nearly did:
 // - the _headers CSP and its index.html meta mirror drifting apart
 // - the CSP missing a host the page really loads from (talk embeds were
 //   blocked in production for a month this way)
@@ -13,11 +13,16 @@
 // - a page or _headers preload referencing a local file that doesn't exist
 // - two _headers rules setting the same header on overlapping paths
 //   (values from all matching rules comma-join into one broken header)
+// The API catalog checks are the exception: nothing has broken yet, because
+// the catalog is new. They exist because RFC 9727 makes machine-read promises
+// about other files, and a broken one is invisible from a browser — no page
+// renders it, so only an agent hitting a 404 would ever find out.
 // Usage: node .github/validate-site.js [site root]
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
+const { isDeepStrictEqual } = require('util');
 
 const root = path.resolve(process.argv[2] ?? path.join(__dirname, '..'));
 const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
@@ -207,7 +212,92 @@ for (const [file, html] of [['index.html', indexHtml], ['404.html', notFoundHtml
   }
 }
 for (const [, reference] of headers.matchAll(/Link:\s*<([^>]+)>/g)) {
-  checkLocal('_headers Link preload', reference);
+  checkLocal('_headers Link', reference);
+}
+
+// --- RFC 9727 API catalog. The catalog, api/openapi.json and api/talks.json
+// restate facts that live elsewhere, and nothing at runtime notices when one
+// drifts: a stale talks.json serves last year's talks forever, and a catalog
+// href to a renamed file is a 404 that an agent hits before any human does.
+const SITE_ORIGIN = 'https://jaredsburrows.com';
+
+const parseJson = (name) => {
+  try {
+    return JSON.parse(read(name));
+  } catch (error) {
+    bad(`${name} is not valid JSON: ${error.message}`);
+    return undefined;
+  }
+};
+
+// talks.js is the file a contributor edits (README: "add one entry to
+// talks.js"); api/talks.json is the copy the API serves. talks.js assigns to
+// window and loads under Node, which is how validate-talks.js reads it too, so
+// this compares parsed data rather than text — reformatting is not drift.
+let talksFromJs;
+try {
+  global.window = {};
+  require(path.join(root, 'static/js/talks.js'));
+  talksFromJs = global.window.TALKS;
+} catch (error) {
+  bad(`static/js/talks.js failed to load: ${error.message}`);
+}
+const talksJson = parseJson('api/talks.json');
+if (talksFromJs && talksJson && !isDeepStrictEqual(talksJson.talks, talksFromJs)) {
+  bad('api/talks.json is out of sync with static/js/talks.js — the homepage and the API would disagree about the talks');
+}
+
+const catalog = parseJson('.well-known/api-catalog');
+if (catalog && !Array.isArray(catalog.linkset)) {
+  bad('.well-known/api-catalog has no linkset array (RFC 9727 Section 4.2)');
+} else if (catalog) {
+  catalog.linkset.forEach((entry, index) => {
+    const name = `.well-known/api-catalog entry ${index + 1}`;
+    if (typeof entry.anchor !== 'string' || !entry.anchor.startsWith('https://')) {
+      bad(`${name} has no anchor — nothing says which API its links describe`);
+    }
+    // Only hrefs are checked against the tree: they are what a client fetches,
+    // while an anchor is a link context and need not be retrievable.
+    for (const [relation, links] of Object.entries(entry)) {
+      if (relation === 'anchor' || !Array.isArray(links)) continue;
+      for (const link of links) {
+        if (typeof link?.href !== 'string') {
+          bad(`${name} has a ${relation} link with no href`);
+        } else if (link.href.startsWith(`${SITE_ORIGIN}/`)) {
+          checkLocal(name, link.href.slice(SITE_ORIGIN.length));
+        }
+      }
+    }
+  });
+}
+
+// RFC 9727 Section 6.2 makes application/linkset+json a MUST, and the
+// well-known URI has no extension for Cloudflare to infer a type from — the
+// _headers rule is the only thing standing between it and the wrong type.
+const headerRuleValues = (pattern) => {
+  const lines = headers.split('\n');
+  const start = lines.findIndex((line) => /^\S/.test(line) && line.trim() === pattern);
+  if (start === -1) return undefined;
+  const values = [];
+  for (let i = start + 1; i < lines.length && !/^\S/.test(lines[i]); i += 1) {
+    if (lines[i].trim() !== '') values.push(lines[i].trim());
+  }
+  return values;
+};
+const catalogRule = headerRuleValues('/.well-known/api-catalog');
+if (!catalogRule) {
+  bad('_headers has no /.well-known/api-catalog rule, so the catalog is not served as application/linkset+json');
+} else if (!catalogRule.some((line) => /^Content-Type:\s*application\/linkset\+json\b/i.test(line))) {
+  bad('_headers does not set Content-Type: application/linkset+json on /.well-known/api-catalog (RFC 9727 Section 6.2 makes it a MUST)');
+}
+
+// Every path the description advertises must have a file behind it, or the
+// OpenAPI document promises an endpoint that 404s.
+const openapi = parseJson('api/openapi.json');
+for (const endpoint of Object.keys(openapi?.paths ?? {})) {
+  if (!fs.existsSync(path.join(root, endpoint.replace(/^\//, '')))) {
+    bad(`api/openapi.json describes ${endpoint} but no file serves it`);
+  }
 }
 
 // --- _headers: the same header set by two rules that can match one path
@@ -256,4 +346,4 @@ if (errors.length > 0) {
   for (const message of errors) console.error(`  - ${message}`);
   process.exit(1);
 }
-console.log('✓ site invariants hold (CSP parity + coverage, embed referer, id contract, file references, _headers overlap, _redirects syntax)');
+console.log('✓ site invariants hold (CSP parity + coverage, embed referer, id contract, file references, API catalog, _headers overlap, _redirects syntax)');
