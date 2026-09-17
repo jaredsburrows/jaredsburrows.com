@@ -624,7 +624,7 @@ testFiles('an og:image with a ../ traversal out of the repo fails closed', {
 }, 1, `index.html references missing file ${TRAVERSAL}`);
 
 // --- /index.md, the markdown twin of the homepage. For an agent that sends
-// `Accept: text/markdown` the zone rewrite makes this file the homepage, and
+// `Accept: text/markdown` src/worker.mjs makes this file the homepage, and
 // nothing renders it, so every mutation below ships a broken or stale homepage
 // to agents against a green browser experience and an otherwise green build.
 const originalIndexMd = fs.readFileSync(path.join(repoRoot, 'index.md'), 'utf8');
@@ -637,8 +637,8 @@ assert.ok(originalIndexHtml.includes(ALTERNATE_LINK),
 assert.ok(/^\s+Vary:\s*Accept\b/m.test(originalHeaders),
   'fixture assumption broken: _headers no longer sets Vary: Accept');
 
-// Deleting the twin leaves the rewrite pointing at nothing: / with
-// `Accept: text/markdown` would serve the 404 page as the homepage.
+// Deleting the twin leaves the Worker with nothing to serve: / would answer
+// `Accept: text/markdown` with the HTML page, silently, forever.
 testFiles('a missing index.md fails closed', { 'index.md': null }, 1, 'index.md is missing');
 
 // Front matter is both a broken title (the H1 is no longer first) and the
@@ -670,8 +670,8 @@ testFiles('a talk deleted from index.md alone fails closed',
   { 'index.md': originalIndexMd.split('\n').filter((line) => !line.includes('Make Your Build Great Again')).join('\n') },
   1, 'does not list the talk "Make Your Build Great Again"');
 
-// rel=alternate is the only discovery path that survives the zone rule being
-// removed, so losing it is a real regression even while / still serves markdown.
+// rel=alternate is the only discovery path that survives the Worker being rolled
+// back, so losing it is a real regression even while / still serves markdown.
 testFiles('index.html without the rel=alternate markdown link fails closed',
   { 'index.html': originalIndexHtml.replace(ALTERNATE_LINK, '') },
   1, 'no <link rel="alternate" type="text/markdown">');

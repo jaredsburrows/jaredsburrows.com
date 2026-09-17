@@ -61,8 +61,8 @@
     <link rel="ard" href="/.well-known/ard.json">
     <link rel="ai-catalog" href="/.well-known/ai-catalog.json">
     <!-- The markdown twin of this page. An agent that prefers markdown finds it
-         from the markup; the zone rule in README ("Cloudflare zone rules")
-         serves it from / when the request carries Accept: text/markdown. -->
+         from the markup; src/worker.mjs also serves it from / when the request
+         names text/markdown in Accept. -->
     <link rel="alternate" type="text/markdown" href="/index.md">
     <meta name="theme-color" content="#121211" media="(prefers-color-scheme: dark)">
     <meta name="theme-color" content="#faf9f7" media="(prefers-color-scheme: light)">

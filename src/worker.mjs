@@ -1,0 +1,196 @@
+// Markdown content negotiation for the homepage — the only code this site runs.
+//
+// `assets.run_worker_first: ["/"]` in wrangler.jsonc scopes it to `/`: every
+// other path (CSS, JS, images, /index.md itself, /api/*, the 404 page) is
+// served by Cloudflare's asset router without ever invoking this script, which
+// is both faster and unbilled. On `/` the script asks one question — did the
+// client name `text/markdown` in `Accept`? — and answers it with either the
+// hand-written markdown twin or the ordinary HTML page.
+//
+// `parseAccept`, `exactQuality`, `effectiveQuality`, `wantsMarkdown` and
+// `varyWithAccept` are ported from jaredsburrows/burrows.tools#279
+// (`src/lib/markdown-negotiation.ts`), keeping its semantics and its reasoning.
+// They are JSDoc-annotated JavaScript rather than TypeScript on purpose: this
+// repo has no package.json, no tsconfig.json and no lockfile, so a .ts file
+// would be bundled by Wrangler but type-checked by nothing.
+//
+// The extension is .mjs, not .js, so that Node reads it as an ES module without
+// a package.json to say so — that is what lets src/worker.test.mjs import these
+// functions directly. Nothing here imports a `cloudflare:` module or touches
+// global state at load time, so importing it outside workerd is safe.
+
+/** The media type an agent must name exactly to be served markdown. */
+const MARKDOWN_MEDIA_TYPE = 'text/markdown';
+
+/** The hand-written markdown twin of the homepage, served from `/` when negotiated. */
+const MARKDOWN_ASSET = '/index.md';
+
+/**
+ * Statuses whose responses carry no body. Passing a body — even `null` from an
+ * already-bodyless response — to `new Response()` with one of these throws, so a
+ * blind re-wrap would turn a 304 revalidation into a 500. `_headers` still puts
+ * `Vary: Accept` on `/`, which is what covers the responses left untouched here.
+ */
+const NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
+
+/**
+ * One entry of a parsed `Accept` header.
+ *
+ * @typedef {object} AcceptEntry
+ * @property {string} type Media type or wildcard, lower-cased.
+ * @property {number} quality Its q-value; 1 when the header does not give one.
+ */
+
+/**
+ * Parses `Accept` into media types with their q-values, lower-cased, ignoring
+ * other parameters.
+ *
+ * A malformed q is treated as 1 rather than as a parse failure: RFC 9110 says a
+ * recipient that cannot parse a parameter should ignore it, and refusing to
+ * serve a page over a bad `;q=` would turn a cosmetic client bug into a broken
+ * request.
+ *
+ * @param {string} header Raw `Accept` header value.
+ * @returns {AcceptEntry[]}
+ */
+function parseAccept(header) {
+  const entries = [];
+  for (const part of header.split(',')) {
+    const [rawType, ...parameters] = part.split(';');
+    const type = rawType.trim().toLowerCase();
+    if (type === '') continue;
+    let quality = 1;
+    for (const parameter of parameters) {
+      const match = /^\s*q\s*=\s*([\d.]+)\s*$/i.exec(parameter);
+      if (match) {
+        const parsed = Number.parseFloat(match[1]);
+        quality = Number.isFinite(parsed) ? parsed : 1;
+      }
+    }
+    entries.push({ type, quality });
+  }
+  return entries;
+}
+
+/**
+ * The q-value the header gives `type` exactly, or 0 when it never names it.
+ *
+ * @param {readonly AcceptEntry[]} entries
+ * @param {string} type
+ * @returns {number}
+ */
+function exactQuality(entries, type) {
+  return entries.find((entry) => entry.type === type)?.quality ?? 0;
+}
+
+/**
+ * The q-value `type` gets including the `text/` and catch-all wildcards a
+ * browser sends.
+ *
+ * @param {readonly AcceptEntry[]} entries
+ * @param {string} type
+ * @returns {number}
+ */
+function effectiveQuality(entries, type) {
+  const group = `${type.split('/')[0]}/*`;
+  return Math.max(
+    exactQuality(entries, type),
+    exactQuality(entries, group),
+    exactQuality(entries, '*/*'),
+  );
+}
+
+/**
+ * Whether this request asked for markdown instead of HTML.
+ *
+ * The rule is deliberately narrow: `text/markdown` has to be named *exactly*,
+ * with a non-zero q, and be at least as preferred as HTML. Wildcards never
+ * select markdown, which is the whole safety property here — every browser on
+ * earth ends its `Accept` with a catch-all at `q=0.8`, and `curl` sends nothing
+ * but a catch-all, so matching one would serve markdown to ordinary visitors and
+ * hand Googlebot a page with no HTML in it. HTML stays the default for
+ * everything that does not ask for markdown by name.
+ *
+ * @param {string | null | undefined} accept Raw `Accept` header value, if any.
+ * @returns {boolean}
+ */
+export function wantsMarkdown(accept) {
+  if (!accept) return false;
+  const entries = parseAccept(accept);
+  const markdown = exactQuality(entries, MARKDOWN_MEDIA_TYPE);
+  if (markdown <= 0) return false;
+  return markdown >= effectiveQuality(entries, 'text/html');
+}
+
+/**
+ * `Vary` with `Accept` added, preserving whatever was already there.
+ *
+ * `/` has two representations now, so a cache that was never told the request
+ * headers matter is free to hand the markdown to a browser — and `Vary` on the
+ * markdown response alone would not help, because the copy a cache is most
+ * likely to have stored first is the HTML one. A `Vary: *` is left alone: it
+ * already means "never reuse this", which is strictly stronger than anything
+ * adding a field name could say.
+ *
+ * @param {string | null | undefined} existing Current `Vary` value, if any.
+ * @returns {string}
+ */
+export function varyWithAccept(existing) {
+  if (!existing || existing.trim() === '') return 'Accept';
+  const fields = existing.split(',').map((field) => field.trim());
+  if (fields.some((field) => field === '*')) return existing;
+  if (fields.some((field) => field.toLowerCase() === 'accept')) return existing;
+  return `${existing}, Accept`;
+}
+
+export default {
+  /**
+   * @param {Request} request Incoming request; only `/` reaches this handler.
+   * @param {{ ASSETS: { fetch: (input: Request | URL | string) => Promise<Response> } }} env
+   *   `assets.binding` from wrangler.jsonc: the static asset router, as a binding.
+   * @returns {Promise<Response>}
+   */
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    // Retrieval only: negotiating a representation is meaningless for a request
+    // that is not asking for one. `/index.html` is absent on purpose — the asset
+    // router redirects it to `/` (html_handling: auto-trailing-slash) before this
+    // script is ever invoked, so a branch for it would be unreachable code.
+    const negotiable = (request.method === 'GET' || request.method === 'HEAD') && url.pathname === '/';
+
+    if (negotiable && wantsMarkdown(request.headers.get('accept'))) {
+      // A neutral `Accept` on the subrequest: this fetch names one exact file, so
+      // nothing downstream should try to negotiate it a second time.
+      const markdown = await env.ASSETS.fetch(new Request(new URL(MARKDOWN_ASSET, url), {
+        method: request.method,
+        headers: { accept: '*/*' },
+      }));
+      // A missing or broken twin is a bug; serving no homepage at all is an
+      // outage. So anything other than a healthy asset falls through to the HTML
+      // below, where CI (validate-site.js) is what keeps the twin honest.
+      if (markdown.ok) {
+        const headers = new Headers(markdown.headers);
+        // The asset is served as text/markdown already, but this response stands
+        // in for `/`, so the type it claims is stated here rather than inherited.
+        headers.set('content-type', `${MARKDOWN_MEDIA_TYPE}; charset=utf-8`);
+        headers.set('vary', varyWithAccept(headers.get('vary')));
+        headers.set('x-content-type-options', 'nosniff');
+        return new Response(markdown.body, {
+          status: markdown.status,
+          statusText: markdown.statusText,
+          headers,
+        });
+      }
+    }
+
+    const response = await env.ASSETS.fetch(request);
+    if (NULL_BODY_STATUSES.has(response.status)) return response;
+    const headers = new Headers(response.headers);
+    headers.set('vary', varyWithAccept(headers.get('vary')));
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  },
+};

@@ -57,30 +57,34 @@ require("fs").writeFileSync("api/talks.json",
 
 `index.md` is a hand-written copy of `index.html` for agents that ask for
 Markdown instead of HTML. Edit it whenever you edit the homepage — CI fails if
-it stops listing a talk from `static/js/talks.js`, and `<link rel="alternate"
-type="text/markdown">` in the head points at it.
+its opening paragraph stops matching the page's `<meta name="description">`, or
+if its talks stop matching `static/js/talks.js` in either direction — and
+`<link rel="alternate" type="text/markdown">` in the head points at it.
 
-### Cloudflare zone rules
+### The Worker
 
-`_redirects` and `_headers` cannot branch on a request header, so the Markdown
-content negotiation on `/` is a zone rule in the Cloudflare dashboard rather
-than a file here. Written down so it is recoverable if the zone is rebuilt.
+`src/worker.mjs` is the only server code on this site. `_headers` and
+`_redirects` cannot branch on a request header, so the Markdown negotiation on
+`/` is a Worker: when the request names `text/markdown` in `Accept` — exactly,
+with a non-zero q, and at least as preferred as `text/html` — it returns
+`index.md` as the homepage; everything else gets the HTML.
 
-Rules → Transform Rules → URL Rewrite; action "Rewrite to" path, *static*,
-`/index.md`; expression:
+`assets.run_worker_first: ["/"]` in `wrangler.jsonc` scopes it to `/`, and
+`assets.binding` is what gives it `env.ASSETS.fetch`. Every other path is
+matched by Cloudflare's asset router before any code runs, so those requests
+are neither slowed down nor billed as Worker invocations.
+
+Wildcards never select Markdown: a browser ends its `Accept` with `*/*;q=0.8`
+and `curl` sends nothing but `*/*`, so matching one would hand ordinary
+visitors — and Googlebot — a page with no HTML in it. `src/worker.test.mjs` is
+that truth table; run it with `node --test src/worker.test.mjs`.
+
+Both directions are checkable locally, against the real asset router:
 
 ```
-(http.request.uri.path eq "/") and (any(http.request.headers["accept"][*] contains "text/markdown"))
-```
-
-The transform phase runs before the Worker, so the assets router then serves
-`/index.md` with `content-type: text/markdown`. Browsers never send
-`text/markdown` in `Accept`, so they keep getting the HTML, and `/` carries
-`Vary: Accept` for downstream caches. Verify both directions:
-
-```
-curl -sI -H 'Accept: text/markdown' https://jaredsburrows.com | grep -i content-type
-curl -sI https://jaredsburrows.com | grep -i content-type
+npx wrangler dev
+curl -sI -H 'Accept: text/markdown' localhost:8787/ | grep -i -e content-type -e vary
+curl -sI localhost:8787/ | grep -i content-type
 ```
 
 ### Update the avatar

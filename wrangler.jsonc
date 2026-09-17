@@ -1,14 +1,25 @@
 {
-  // Assets-only Worker: no server code, Cloudflare just serves the files in
-  // this directory from its edge. Requests to static assets are not billed
-  // as Worker invocations.
+  // Static site plus one route of server code. Cloudflare serves the files in
+  // this directory from its edge; src/worker.mjs runs on "/" and only "/"
+  // (assets.run_worker_first), where it answers Accept: text/markdown with the
+  // markdown twin of the homepage. Every other path is matched by the asset
+  // router before any code runs, so those requests stay unbilled — the Worker
+  // is invoked, and billed, only for the homepage.
   "name": "jaredsburrows-com",
   "account_id": "23fd1f78e6c723b48b52bd073092907a",
   "compatibility_date": "2026-07-25",
   "workers_dev": false,
+  "main": "src/worker.mjs",
   "assets": {
     "directory": ".",
-    "not_found_handling": "404-page"
+    "not_found_handling": "404-page",
+    // Exposes the asset router to the Worker as env.ASSETS.fetch(), which is how
+    // the Worker reads /index.md and how everything it does not negotiate is
+    // served: without this the script has no way to reach the files at all.
+    "binding": "ASSETS",
+    // Exactly one route-first pattern. Broadening this (or setting it to true)
+    // would put every request for every asset through a billed invocation.
+    "run_worker_first": ["/"]
   },
   "observability": {
     "enabled": true,

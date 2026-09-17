@@ -504,10 +504,10 @@ if (!fs.existsSync(authMdPath)) {
   }
 }
 
-// --- /index.md, the markdown twin of the homepage. A zone URL Rewrite rule
-// serves it from / when the request carries `Accept: text/markdown`, so for an
-// agent asking for markdown this file IS the homepage — and no browser ever
-// renders it, which makes every failure here invisible outside CI. The twin is
+// --- /index.md, the markdown twin of the homepage. src/worker.mjs serves it
+// from / when the request names `text/markdown` in `Accept`, so for an agent
+// asking for markdown this file IS the homepage — and no browser ever renders
+// it, which makes every failure here invisible outside CI. The twin is
 // hand-written on purpose (generating it would be the build step this site has
 // never had), so it can only be kept honest by checking it against the files it
 // restates: it must exist, it must open with the H1 a markdown reader shows as
@@ -519,7 +519,7 @@ if (!fs.existsSync(authMdPath)) {
 const MARKDOWN_TWIN = 'index.md';
 const twinPath = path.join(root, MARKDOWN_TWIN);
 if (!fs.existsSync(twinPath)) {
-  bad(`${MARKDOWN_TWIN} is missing — the / rewrite on Accept: text/markdown would serve the 404 page`);
+  bad(`${MARKDOWN_TWIN} is missing — / would fall back to HTML for every agent that asks for markdown`);
 } else {
   const twin = fs.readFileSync(twinPath, 'utf8');
   // Anchored at the start of the file, not at any line: the first thing in a
@@ -596,7 +596,7 @@ if (!fs.existsSync(twinPath)) {
 
 // The markup half of the same contract: an agent that parses HTML rather than
 // guessing URLs finds the twin through rel=alternate, and it is the only
-// discovery path that works if the zone rule is ever removed.
+// discovery path that survives the Worker being rolled back.
 const headMatch = indexHtml.match(/<head\b[^>]*>([\s\S]*?)<\/head>/i);
 if (!headMatch) {
   bad('index.html: no <head> element found');
@@ -613,8 +613,9 @@ if (!headMatch) {
 
 // And the cache half: / has two representations now, so a downstream cache that
 // never sees the Accept header would be free to hand the markdown to a browser.
-// Cloudflare's own Markdown-for-Agents feature adds this header for the same
-// reason; ours is static, so _headers is where it has to live.
+// src/worker.mjs sets Vary on the responses it builds, but the ones it hands
+// back untouched (a 304 has no body to re-wrap) get it only from here — and
+// this is also what keeps / varying if the Worker is ever rolled back.
 const homepageRule = headerRuleValues('/');
 if (!homepageRule) {
   bad('_headers has no "/" rule, so the homepage cannot carry Vary: Accept');

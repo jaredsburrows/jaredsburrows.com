@@ -31,11 +31,14 @@
 # that zone setting is on, and browsers honor them from the response headers
 # either way — both start the fetch before HTML parsing.
 #
-# Vary: Accept is for the zone URL Rewrite rule that serves /index.md from /
-# when the request carries Accept: text/markdown (expression in README). The
-# two representations already land on different Cloudflare cache keys (/ vs
-# the rewritten /index.md), so this is for downstream caches — and it is the
-# only Vary in this file, so nothing joins with it.
+# Vary: Accept because / has two representations: src/worker.mjs answers
+# Accept: text/markdown with /index.md and every other request with this HTML.
+# The Worker sets the same header on the responses it builds, but not on the
+# ones it must hand back untouched — a 304 has no body to re-wrap — and those
+# come from the asset router, which is exactly what applies this file. Keeping
+# it here also means / keeps varying if the Worker is ever rolled back. It is
+# the only Vary in the file, so nothing joins with it, and the Worker appends to
+# an existing value rather than repeating it.
 /
   Link: </static/css/home.css>; rel=preload; as=style
   Link: </static/image/avatar.webp>; rel=preload; as=image
