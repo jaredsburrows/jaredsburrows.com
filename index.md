@@ -1,10 +1,10 @@
 # Jared Burrows
 
-Software engineer with 10+ years building mobile, cross-platform, and cloud
-products for Adobe, Google, Microsoft, Nike, NBCUniversal, Yahoo, and Northrop
-Grumman. I specialize in Android and Kotlin development, shipping award-winning
-apps used by millions. Open-source maintainer and conference speaker, including
-Droidcon.
+> Software engineer with 10+ years building mobile, cross-platform, and cloud
+> products for Adobe, Google, Microsoft, Nike, NBCUniversal, Yahoo, and Northrop
+> Grumman. I specialize in Android and Kotlin development, shipping award-winning
+> apps used by millions. Open-source maintainer and conference speaker, including
+> Droidcon.
 
 ## Elsewhere
 

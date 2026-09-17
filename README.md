@@ -56,10 +56,14 @@ require("fs").writeFileSync("api/talks.json",
 ### Markdown twin of the homepage
 
 `index.md` is a hand-written copy of `index.html` for agents that ask for
-Markdown instead of HTML. Edit it whenever you edit the homepage — CI fails if
-its opening paragraph stops matching the page's `<meta name="description">`, or
-if its talks stop matching `static/js/talks.js` in either direction — and
-`<link rel="alternate" type="text/markdown">` in the head points at it.
+Markdown instead of HTML. It opens with the H1, then quotes the page's
+`<meta name="description">` as a summary blockquote — the site's one description
+of itself, not a second one. Prose may follow that blockquote, but only carrying
+what the summary does not already say; today it says all of it, so there is
+none. Edit the file whenever you edit the homepage: CI fails if the blockquote
+stops matching the meta description, or if the talks stop matching
+`static/js/talks.js` in either direction. `<link rel="alternate"
+type="text/markdown">` in the head points at it.
 
 ### The Worker
 

@@ -746,37 +746,51 @@ testFiles('the unmodified TTLs on /static/* and /api/* still pass',
 // served something the site no longer says.
 const META_DESCRIPTION = (originalIndexHtml.match(/<meta name="description" content="([^"]*)">/) ?? [])[1];
 assert.ok(META_DESCRIPTION, 'fixture assumption broken: index.html has no <meta name="description">');
-// Read as "the paragraph after the H1", never as a hardcoded line range: the
-// lede is soft-wrapped, so a re-wrap or a longer description changes how many
-// lines it occupies, and a slice would then compare the wrong text — which is a
-// test that passes for the wrong reason rather than one that fails loudly.
-const ledeOf = (markdown) => {
+// B3: the description is the twin's summary blockquote, not its first
+// paragraph — anything under it carries only what the summary does not say.
+// Read as "the block after the H1", never as a hardcoded line range: the
+// summary is soft-wrapped, so a re-wrap or a longer description changes how
+// many lines it occupies, and a slice would then compare the wrong text —
+// a test that passes for the wrong reason rather than one that fails loudly.
+const blockAfterH1 = (markdown) => {
   const lines = markdown.split('\n').slice(1);
   const start = lines.findIndex((line) => line.trim() !== '');
   const end = lines.findIndex((line, index) => index > start && line.trim() === '');
   return lines.slice(start, end === -1 ? undefined : end);
 };
+const SUMMARY_BLOCKQUOTE = blockAfterH1(originalIndexMd);
 assert.strictEqual(
-  ledeOf(originalIndexMd).map((line) => line.trim()).join(' '), META_DESCRIPTION,
-  'fixture assumption broken: index.md no longer opens with the meta description as its first paragraph');
+  SUMMARY_BLOCKQUOTE.map((line) => line.trim().replace(/^>[ \t]?/, '')).join(' '), META_DESCRIPTION,
+  'fixture assumption broken: index.md no longer quotes the meta description as its summary blockquote');
+assert.ok(SUMMARY_BLOCKQUOTE.every((line) => line.startsWith('> ')),
+  'fixture assumption broken: index.md summary is no longer a blockquote');
 
 // The sentence exists twice — once as the meta description, once as the twin's
-// lede — and nothing renders both, so only a comparison catches a one-sided
+// summary — and nothing renders both, so only a comparison catches a one-sided
 // edit. Both sides are tested: either file can be the one that moves.
-testFiles('editing the twin lede away from the meta description fails closed',
+testFiles('editing the twin summary away from the meta description fails closed',
   { 'index.md': originalIndexMd.replace('Android and Kotlin development', 'Android development') },
-  1, "opening paragraph is not index.html's meta description");
+  1, "summary blockquote is not index.html's meta description");
 
-testFiles('editing the meta description away from the twin lede fails closed',
+testFiles('editing the meta description away from the twin summary fails closed',
   { 'index.html': originalIndexHtml.replace(META_DESCRIPTION, 'Jared Burrows — software engineer.') },
-  1, "opening paragraph is not index.html's meta description");
+  1, "summary blockquote is not index.html's meta description");
 
-// Markdown soft-wraps: a newline inside a paragraph renders as a space, so
-// re-wrapping the lede changes no rendered byte and must keep passing. Without
-// this the invariant would be a line-length rule wearing a content-check hat.
-testFiles('re-wrapping the twin lede onto one line passes',
-  { 'index.md': originalIndexMd.replace(ledeOf(originalIndexMd).join('\n'), META_DESCRIPTION) },
+// Markdown soft-wraps: a newline inside a blockquote renders as a space, so
+// re-wrapping the summary changes no rendered byte and must keep passing.
+// Without this the invariant would be a line-length rule wearing a
+// content-check hat.
+testFiles('re-wrapping the twin summary onto one line passes',
+  { 'index.md': originalIndexMd.replace(SUMMARY_BLOCKQUOTE.join('\n'), `> ${META_DESCRIPTION}`) },
   0);
+
+// Un-quoting the summary is the B3 regression coming back: as a plain paragraph
+// it reads as prose the twin owns, which is what invites a second paragraph
+// restating it — the shape this file had when B3 was filed.
+testFiles('a summary that is no longer a blockquote fails closed',
+  { 'index.md': originalIndexMd.replace(SUMMARY_BLOCKQUOTE.join('\n'),
+    SUMMARY_BLOCKQUOTE.map((line) => line.replace(/^>[ \t]?/, '')).join('\n')) },
+  1, 'has no summary blockquote under its H1');
 
 // The reverse drift the forward check could never see: a talk is retired from
 // talks.js and api/talks.json, and the twin keeps publishing it to agents.

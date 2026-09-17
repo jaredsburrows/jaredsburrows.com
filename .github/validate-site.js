@@ -515,7 +515,7 @@ if (!fs.existsSync(authMdPath)) {
 // hand-written on purpose (generating it would be the build step this site has
 // never had), so it can only be kept honest by checking it against the files it
 // restates: it must exist, it must open with the H1 a markdown reader shows as
-// the title, its opening paragraph must be index.html's meta description
+// the title, the blockquote under that H1 must be index.html's meta description
 // verbatim, and its talks list must agree with `static/js/talks.js` in both
 // directions. The talks one is the drift that will actually happen: a talk gets
 // added to talks.js and api/talks.json (README tells you to do both) and the
@@ -533,31 +533,38 @@ if (!fs.existsSync(twinPath)) {
     bad(`${MARKDOWN_TWIN} does not start with an ATX H1 ("# Jared Burrows") — the markdown homepage has no title`);
   }
 
-  // The lede has exactly one source. index.html's <meta name="description"> is
-  // the sentence search engines and link unfurls quote; the twin's opening
-  // paragraph is that same sentence for an agent reading markdown instead. Two
+  // The summary has exactly one source. index.html's <meta name="description">
+  // is the sentence search engines and link unfurls quote; the twin quotes it
+  // back, as the blockquote directly under the H1, so an agent gets the same
+  // sentence a search result would. It is a blockquote and not a paragraph
+  // precisely so the prose beneath it can carry only what the summary does not
+  // already say — the two used to restate each other (BUGS.md B3). Two
   // hand-written copies of one sentence drift silently — nothing renders both —
-  // so they are compared here. The only normalisation is Markdown's own soft
-  // wrap (a single newline inside a paragraph renders as a space), so what is
-  // compared is the rendered text, byte for byte. Both sides stay plain text: an
-  // HTML entity on one side and its character on the other fails this check, and
-  // the fix is to keep both plain rather than to teach it to decode.
+  // so they are compared here. The normalisation is Markdown's own: the `> `
+  // marker comes off each line and a single newline inside the quote renders as
+  // a space, so what is compared is the rendered text, byte for byte. Both sides
+  // stay plain text: an HTML entity on one side and its character on the other
+  // fails this check, and the fix is to keep both plain rather than to teach it
+  // to decode.
   const descriptionMatch = indexHtml.match(/<meta\s+name="description"\s+content="([^"]*)"/i);
   if (!descriptionMatch) {
-    bad('index.html: <meta name="description"> not found, so the markdown twin has nothing to match its opening paragraph against');
+    bad('index.html: <meta name="description"> not found, so the markdown twin has nothing to match its summary blockquote against');
   } else if (/^#[ \t]+\S/.test(twin)) {
     const lines = twin.split('\n');
-    const lede = [];
+    const summary = [];
     for (let i = 1; i < lines.length; i += 1) {
       const line = lines[i].trim();
       if (line === '') {
-        if (lede.length > 0) break;
+        if (summary.length > 0) break;
         continue;
       }
-      lede.push(line);
+      if (!line.startsWith('>')) break;
+      summary.push(line.replace(/^>[ \t]?/, ''));
     }
-    if (lede.join(' ') !== descriptionMatch[1]) {
-      bad(`${MARKDOWN_TWIN} opening paragraph is not index.html's meta description verbatim — the same sentence is written twice and one copy has drifted\n      ${MARKDOWN_TWIN}:   ${lede.join(' ')}\n      index.html: ${descriptionMatch[1]}`);
+    if (summary.length === 0) {
+      bad(`${MARKDOWN_TWIN} has no summary blockquote under its H1 — the first thing after the title must be index.html's meta description, quoted`);
+    } else if (summary.join(' ') !== descriptionMatch[1]) {
+      bad(`${MARKDOWN_TWIN} summary blockquote is not index.html's meta description verbatim — the same sentence is written twice and one copy has drifted\n      ${MARKDOWN_TWIN}:   ${summary.join(' ')}\n      index.html: ${descriptionMatch[1]}`);
     }
   }
 
