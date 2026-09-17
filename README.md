@@ -67,7 +67,9 @@ if its talks stop matching `static/js/talks.js` in either direction — and
 `_redirects` cannot branch on a request header, so the Markdown negotiation on
 `/` is a Worker: when the request names `text/markdown` in `Accept` — exactly,
 with a non-zero q, and at least as preferred as `text/html` — it returns
-`index.md` as the homepage; everything else gets the HTML.
+`index.md` as the homepage; everything else gets the HTML. A header that names
+one media type twice with disagreeing q-values states no preference at all, and
+gets the HTML too.
 
 Revalidation works on both representations: `If-None-Match` and
 `If-Modified-Since` are forwarded onto the `index.md` subrequest, so an agent

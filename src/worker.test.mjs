@@ -40,6 +40,17 @@ const TRUTH_TABLE = [
   ['', false, 'an empty header states nothing'],
   [null, false, 'no Accept header at all'],
   [undefined, false, 'the same, as the Headers API can report it'],
+
+  // B2: one media type, two q-values, no answer. Both orders must give the same
+  // one, and the only order-independent answer that is never unsafe is HTML.
+  ['text/markdown,text/markdown;q=0', false, 'named twice with disagreeing q — ambiguous, so HTML'],
+  ['text/markdown;q=0,text/markdown', false, 'the same header reordered must not flip the answer'],
+  ['text/markdown;q=0.9,text/markdown;q=0.1', false, 'ambiguous even when both q-values are non-zero'],
+  ['text/markdown,text/html;q=0.9,text/html', false, 'the ambiguity may be on the HTML side instead'],
+  ['text/markdown,*/*;q=0.8,*/*', false, 'or on the catch-all a browser sends'],
+  ['text/markdown,text/markdown', true, 'a repeat that agrees states one value, not two'],
+  ['text/markdown;q=0.5,text/markdown;q=0.5', true, 'the same, spelled out on both copies'],
+  ['text/markdown;q=0,text/markdown;q=0.0', false, 'agreeing on a refusal is still a refusal'],
 ];
 
 test('wantsMarkdown truth table', () => {

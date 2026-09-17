@@ -91,31 +91,49 @@ function parseAccept(header) {
 }
 
 /**
- * The q-value the header gives `type` exactly, or 0 when it never names it.
+ * The q-value the header gives `type` exactly, 0 when it never names it, or
+ * `null` when it names it more than once with disagreeing q-values.
+ *
+ * That last case is refused rather than resolved, and the caller turns it into
+ * "HTML". `text/markdown,text/markdown;q=0` and `text/markdown;q=0,text/markdown`
+ * are the same two tokens in the other order, and RFC 9110 does not say which
+ * one wins; the ported `find()` answered by header order, so the same header
+ * flipped its meaning when reordered (BUGS.md B2). Highest-wins and last-wins
+ * are both inventions, and one of them has to guess in the direction of serving
+ * markdown. Refusing cannot guess wrong: the fallback is HTML, which is the
+ * representation every client can read. Duplicates that agree state one value,
+ * not two, so they are not ambiguous and go through normally.
  *
  * @param {readonly AcceptEntry[]} entries
  * @param {string} type
- * @returns {number}
+ * @returns {number | null}
  */
 function exactQuality(entries, type) {
-  return entries.find((entry) => entry.type === type)?.quality ?? 0;
+  const named = entries.filter((entry) => entry.type === type);
+  if (named.length === 0) return 0;
+  const [{ quality }] = named;
+  return named.every((entry) => entry.quality === quality) ? quality : null;
 }
 
 /**
  * The q-value `type` gets including the `text/` and catch-all wildcards a
- * browser sends.
+ * browser sends, or `null` if any of the three is ambiguous.
  *
  * @param {readonly AcceptEntry[]} entries
  * @param {string} type
- * @returns {number}
+ * @returns {number | null}
  */
 function effectiveQuality(entries, type) {
   const group = `${type.split('/')[0]}/*`;
-  return Math.max(
+  const qualities = [
     exactQuality(entries, type),
     exactQuality(entries, group),
     exactQuality(entries, '*/*'),
-  );
+  ];
+  // Math.max would read a refusal as 0, which is the unsafe direction here: an
+  // ambiguous text/html must not lower the bar markdown has to clear.
+  if (qualities.includes(null)) return null;
+  return Math.max(...qualities);
 }
 
 /**
@@ -127,7 +145,8 @@ function effectiveQuality(entries, type) {
  * earth ends its `Accept` with a catch-all at `q=0.8`, and `curl` sends nothing
  * but a catch-all, so matching one would serve markdown to ordinary visitors and
  * hand Googlebot a page with no HTML in it. HTML stays the default for
- * everything that does not ask for markdown by name.
+ * everything that does not ask for markdown by name — and for everything that
+ * asks ambiguously (see `exactQuality`).
  *
  * @param {string | null | undefined} accept Raw `Accept` header value, if any.
  * @returns {boolean}
@@ -136,8 +155,10 @@ export function wantsMarkdown(accept) {
   if (!accept) return false;
   const entries = parseAccept(accept);
   const markdown = exactQuality(entries, MARKDOWN_MEDIA_TYPE);
+  const html = effectiveQuality(entries, 'text/html');
+  if (markdown === null || html === null) return false;
   if (markdown <= 0) return false;
-  return markdown >= effectiveQuality(entries, 'text/html');
+  return markdown >= html;
 }
 
 /**
