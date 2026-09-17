@@ -12,7 +12,7 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://*.googletagmanager.com; style-src 'self' 'unsafe-inline'; img-src 'self' https://*.googletagmanager.com https://*.google-analytics.com https://img.youtube.com https://speakerd.s3.amazonaws.com; connect-src 'self' https://*.google-analytics.com https://analytics.google.com https://*.analytics.google.com https://*.googletagmanager.com https://stats.g.doubleclick.net https://www.google.com https://cloudflareinsights.com https://api.github.com https://api.stackexchange.com; frame-src https://*.googletagmanager.com https://www.youtube-nocookie.com https://speakerdeck.com; object-src 'none'; base-uri 'none'; form-action 'none'">
 
     <title>Jared Burrows — Software Engineer</title>
-    <meta name="description" content="Jared Burrows — software engineer specializing in Android and Kotlin. Open-source maintainer (gradle-license-plugin), conference speaker, blog, talks and projects.">
+    <meta name="description" content="Software engineer with 10+ years building mobile, cross-platform, and cloud products for Adobe, Google, Microsoft, Nike, NBCUniversal, Yahoo, and Northrop Grumman. I specialize in Android and Kotlin development, shipping award-winning apps used by millions. Open-source maintainer and conference speaker, including Droidcon.">
     <link rel="preload" href="static/image/avatar.webp" as="image" fetchpriority="high">
 
     <!-- Warms TLS for the two APIs home.js polls after parse, so the footer
@@ -68,6 +68,14 @@
     <script src="static/js/home.js" defer></script>
 
     <!-- Schema Meta Data - https://Schema.org/ -->
+    <!-- Top-level Person. ProfilePage was considered and rejected on
+         eligibility: Google scopes it to forum/social profiles, news author
+         pages, blog "About Me" pages and company employee pages, and calls a
+         home page carrying "lots of non-profile info" invalid — this one is
+         half bio, half talks list. No worksFor or alumniOf — the bio names
+         companies products were built FOR, not a current employer, and no
+         school is recorded anywhere in this repo; every field here has to be
+         sourceable from the site itself. -->
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -76,6 +84,7 @@
         "url": "https://jaredsburrows.com/",
         "image": "https://jaredsburrows.com/static/image/avatar-460.jpg",
         "jobTitle": "Software Engineer",
+        "description": "Software engineer with 10+ years building mobile, cross-platform, and cloud products for Adobe, Google, Microsoft, Nike, NBCUniversal, Yahoo, and Northrop Grumman. I specialize in Android and Kotlin development, shipping award-winning apps used by millions. Open-source maintainer and conference speaker, including Droidcon.",
         "knowsAbout": ["Android", "Kotlin", "Java", "Gradle"],
         "sameAs": [
           "https://blog.jaredsburrows.com",
@@ -88,12 +97,26 @@
         ]
       }
     </script>
+    <!-- Site name only, so search results can show "Jared Burrows" instead of
+         the bare domain; name matches og:site_name below and url matches the
+         canonical. Deliberately no potentialAction/SearchAction — Google
+         deprecated the Sitelinks Searchbox in Oct 2024 and removed it in Nov
+         2024, and this site has no search endpoint to point one at. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "Jared Burrows",
+        "alternateName": "jaredsburrows",
+        "url": "https://jaredsburrows.com/"
+      }
+    </script>
     <!-- End Schema Meta Data -->
 
     <!-- OpenGraph Meta - https://ogp.me/ -->
     <meta property="og:type" content="website">
     <meta property="og:title" content="Jared Burrows — Software Engineer">
-    <meta property="og:description" content="Android &amp; Kotlin engineer. Open-source maintainer, conference speaker. Blog, talks and projects.">
+    <meta property="og:description" content="Software engineer with 10+ years building mobile, cross-platform, and cloud products for Adobe, Google, Microsoft, Nike, NBCUniversal, Yahoo, and Northrop Grumman. I specialize in Android and Kotlin development, shipping award-winning apps used by millions. Open-source maintainer and conference speaker, including Droidcon.">
     <meta property="og:site_name" content="Jared Burrows">
     <meta property="og:url" content="https://jaredsburrows.com/">
     <meta property="og:image" content="https://jaredsburrows.com/static/image/avatar-460.jpg">
@@ -107,7 +130,7 @@
     <meta name="twitter:site" content="@jaredsburrows">
     <meta name="twitter:domain" content="jaredsburrows.com">
     <meta name="twitter:title" content="Jared Burrows — Software Engineer">
-    <meta name="twitter:description" content="Android &amp; Kotlin engineer. Open-source maintainer, conference speaker. Blog, talks and projects.">
+    <meta name="twitter:description" content="Software engineer with 10+ years building mobile, cross-platform, and cloud products for Adobe, Google, Microsoft, Nike, NBCUniversal, Yahoo, and Northrop Grumman. I specialize in Android and Kotlin development, shipping award-winning apps used by millions. Open-source maintainer and conference speaker, including Droidcon.">
     <meta name="twitter:image" content="https://jaredsburrows.com/static/image/avatar-460.jpg">
     <meta name="twitter:image:alt" content="Portrait of Jared Burrows">
     <meta name="twitter:url" content="https://jaredsburrows.com/">
@@ -128,7 +151,7 @@
           <p class="bio">Software engineer with 10+ years building mobile, cross-platform, and cloud products for Adobe, Google, Microsoft, Nike, NBCUniversal, Yahoo, and Northrop Grumman. I specialize in Android and Kotlin development, shipping award-winning apps used by millions. Open-source maintainer and conference speaker, including Droidcon.</p>
         </div>
         <div class="meta">
-          <a href="mailto:jaredsburrows@gmail.com">email me</a><span class="dot">·</span><span id="gh-followers">501 followers on GitHub</span><span class="dot">·</span><span id="so-rep">55,973 rep on Stack Overflow</span>
+          <a href="mailto:jaredsburrows@gmail.com">email me</a><span class="dot">·</span><span id="gh-followers">505 followers on GitHub</span><span class="dot">·</span><span id="so-rep">55,973 rep on Stack Overflow</span>
         </div>
       </div>
       <nav aria-label="Elsewhere">
