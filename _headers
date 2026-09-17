@@ -30,10 +30,17 @@
 # Homepage-only preload hints: Cloudflare turns these into 103 Early Hints when
 # that zone setting is on, and browsers honor them from the response headers
 # either way — both start the fetch before HTML parsing.
+#
+# Vary: Accept is for the zone URL Rewrite rule that serves /index.md from /
+# when the request carries Accept: text/markdown (expression in README). The
+# two representations already land on different Cloudflare cache keys (/ vs
+# the rewritten /index.md), so this is for downstream caches — and it is the
+# only Vary in this file, so nothing joins with it.
 /
   Link: </static/css/home.css>; rel=preload; as=style
   Link: </static/image/avatar.webp>; rel=preload; as=image
   Link: </.well-known/api-catalog>; rel="api-catalog"
+  Vary: Accept
 
 # Talk data and its OpenAPI description change about as often as the talks do,
 # so they get the same one-hour TTL as the other unversioned code assets.

@@ -53,6 +53,36 @@ require("fs").writeFileSync("api/talks.json",
   JSON.stringify({talks:window.TALKS},null,2)+"\n")'
 ```
 
+### Markdown twin of the homepage
+
+`index.md` is a hand-written copy of `index.html` for agents that ask for
+Markdown instead of HTML. Edit it whenever you edit the homepage — CI fails if
+it stops listing a talk from `static/js/talks.js`, and `<link rel="alternate"
+type="text/markdown">` in the head points at it.
+
+### Cloudflare zone rules
+
+`_redirects` and `_headers` cannot branch on a request header, so the Markdown
+content negotiation on `/` is a zone rule in the Cloudflare dashboard rather
+than a file here. Written down so it is recoverable if the zone is rebuilt.
+
+Rules → Transform Rules → URL Rewrite; action "Rewrite to" path, *static*,
+`/index.md`; expression:
+
+```
+(http.request.uri.path eq "/") and (any(http.request.headers["accept"][*] contains "text/markdown"))
+```
+
+The transform phase runs before the Worker, so the assets router then serves
+`/index.md` with `content-type: text/markdown`. Browsers never send
+`text/markdown` in `Accept`, so they keep getting the HTML, and `/` carries
+`Vary: Accept` for downstream caches. Verify both directions:
+
+```
+curl -sI -H 'Accept: text/markdown' https://jaredsburrows.com | grep -i content-type
+curl -sI https://jaredsburrows.com | grep -i content-type
+```
+
 ### Update the avatar
 
 The avatar is self-hosted (Gravatar's 5-minute cache TTL made it flash in on

@@ -60,6 +60,10 @@
          current scanner probes. Both files are byte-identical. -->
     <link rel="ard" href="/.well-known/ard.json">
     <link rel="ai-catalog" href="/.well-known/ai-catalog.json">
+    <!-- The markdown twin of this page. An agent that prefers markdown finds it
+         from the markup; the zone rule in README ("Cloudflare zone rules")
+         serves it from / when the request carries Accept: text/markdown. -->
+    <link rel="alternate" type="text/markdown" href="/index.md">
     <meta name="theme-color" content="#121211" media="(prefers-color-scheme: dark)">
     <meta name="theme-color" content="#faf9f7" media="(prefers-color-scheme: light)">
     <!-- Deferred: fetched in parallel with the page, run in order after parse

@@ -623,5 +623,81 @@ testFiles('an og:image with a ../ traversal out of the repo fails closed', {
     `$1${TRAVERSAL}"`),
 }, 1, `index.html references missing file ${TRAVERSAL}`);
 
+// --- /index.md, the markdown twin of the homepage. For an agent that sends
+// `Accept: text/markdown` the zone rewrite makes this file the homepage, and
+// nothing renders it, so every mutation below ships a broken or stale homepage
+// to agents against a green browser experience and an otherwise green build.
+const originalIndexMd = fs.readFileSync(path.join(repoRoot, 'index.md'), 'utf8');
+const originalTalksJson = fs.readFileSync(path.join(repoRoot, 'api/talks.json'), 'utf8');
+const ALTERNATE_LINK = '<link rel="alternate" type="text/markdown" href="/index.md">';
+assert.ok(/^#[ \t]+\S/.test(originalIndexMd),
+  'fixture assumption broken: index.md no longer starts with an ATX H1');
+assert.ok(originalIndexHtml.includes(ALTERNATE_LINK),
+  'fixture assumption broken: index.html no longer carries the rel=alternate markdown link verbatim');
+assert.ok(/^\s+Vary:\s*Accept\b/m.test(originalHeaders),
+  'fixture assumption broken: _headers no longer sets Vary: Accept');
+
+// Deleting the twin leaves the rewrite pointing at nothing: / with
+// `Accept: text/markdown` would serve the 404 page as the homepage.
+testFiles('a missing index.md fails closed', { 'index.md': null }, 1, 'index.md is missing');
+
+// Front matter is both a broken title (the H1 is no longer first) and the
+// leading edge of the generator this site does not have.
+testFiles('index.md with front matter ahead of the H1 fails closed',
+  { 'index.md': `---\ntitle: Jared Burrows\n---\n\n${originalIndexMd}` },
+  1, 'does not start with an ATX H1');
+
+// Demoting the title is the same failure without the visual tell.
+testFiles('index.md whose title is an H2 fails closed',
+  { 'index.md': originalIndexMd.replace(/^#[ \t]+/, '## ') },
+  1, 'does not start with an ATX H1');
+
+// The realistic drift: README says to add a talk to talks.js and mirror it into
+// api/talks.json — neither step mentions the twin, so both are updated here and
+// only index.md is left behind, exactly as it would happen in practice.
+testFiles('a talk added to talks.js and api/talks.json but not index.md fails closed', (() => {
+  const talk = { date: '2018-01-01', title: 'Unpublished Twin Talk', where: 'Nowhere', location: 'Nowhere, USA' };
+  return {
+    'static/js/talks.js': originalTalksJs.replace('window.TALKS = [',
+      `window.TALKS = [\n  {\n    date: '${talk.date}',\n    title: '${talk.title}',\n    where: '${talk.where}',\n    location: '${talk.location}'\n  },`),
+    'api/talks.json': `${JSON.stringify({ talks: [talk, ...JSON.parse(originalTalksJson).talks] }, null, 2)}\n`,
+  };
+})(), 1, 'does not list the talk "Unpublished Twin Talk"');
+
+// Dropping a talk from the twin alone is the same drift seen from the other
+// side, and it is the one a human proofreading index.md can cause by accident.
+testFiles('a talk deleted from index.md alone fails closed',
+  { 'index.md': originalIndexMd.split('\n').filter((line) => !line.includes('Make Your Build Great Again')).join('\n') },
+  1, 'does not list the talk "Make Your Build Great Again"');
+
+// rel=alternate is the only discovery path that survives the zone rule being
+// removed, so losing it is a real regression even while / still serves markdown.
+testFiles('index.html without the rel=alternate markdown link fails closed',
+  { 'index.html': originalIndexHtml.replace(ALTERNATE_LINK, '') },
+  1, 'no <link rel="alternate" type="text/markdown">');
+
+// Only the head counts: a link element parsed out of the body is not part of
+// the document metadata agents read, so it must not satisfy the requirement.
+testFiles('the rel=alternate link in the body rather than the head fails closed',
+  { 'index.html': originalIndexHtml.replace(ALTERNATE_LINK, '').replace('<body>', `<body>\n    ${ALTERNATE_LINK}`) },
+  1, 'no <link rel="alternate" type="text/markdown">');
+
+// A link that resolves to a real file but the wrong one passes the existing
+// file-reference check, so only an explicit target check catches it.
+testFiles('the rel=alternate link pointing at another markdown file fails closed',
+  { 'index.html': originalIndexHtml.replace(ALTERNATE_LINK, ALTERNATE_LINK.replace('/index.md', '/auth.md')) },
+  1, 'does not point at /index.md');
+
+// Without Vary: Accept a downstream cache may reuse one representation for the
+// other — the markdown homepage served to a browser, or vice versa.
+testFiles('dropping Vary: Accept from the "/" rule fails closed',
+  { '_headers': originalHeaders.split('\n').filter((line) => line.trim() !== 'Vary: Accept').join('\n') },
+  1, 'does not set Vary: Accept');
+
+// Vary is a list header: adding a second field name must not read as removing
+// the first.
+testFiles('Vary listing Accept alongside another field passes',
+  { '_headers': originalHeaders.replace('Vary: Accept', 'Vary: Accept, Accept-Encoding') }, 0);
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

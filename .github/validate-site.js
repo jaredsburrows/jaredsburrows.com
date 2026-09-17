@@ -16,6 +16,8 @@
 //   Cloudflare purge never reaches a browser cache, so renaming the file is
 //   the only cache-bust there is and half a rename is a 30-day 404
 // - /auth.md losing the H1 that agent discovery matches on
+// - /index.md, the markdown twin of the homepage, drifting away from the talks
+//   index.html publishes (no page renders it, so only an agent would notice)
 // - two _headers rules setting the same header on overlapping paths
 //   (values from all matching rules comma-join into one broken header)
 // The API catalog and JSON-LD checks are the exception: nothing has broken
@@ -502,6 +504,69 @@ if (!fs.existsSync(authMdPath)) {
   }
 }
 
+// --- /index.md, the markdown twin of the homepage. A zone URL Rewrite rule
+// serves it from / when the request carries `Accept: text/markdown`, so for an
+// agent asking for markdown this file IS the homepage — and no browser ever
+// renders it, which makes every failure here invisible outside CI. The twin is
+// hand-written on purpose (generating it would be the build step this site has
+// never had), so it can only be kept honest by checking it against the files it
+// restates: it must exist, it must open with the H1 a markdown reader shows as
+// the title, and it must still list every talk `static/js/talks.js` publishes.
+// The last one is the drift that will actually happen: a talk gets added to
+// talks.js and api/talks.json (README tells you to do both) and the twin quietly
+// keeps serving the old list to every agent that prefers markdown.
+const MARKDOWN_TWIN = 'index.md';
+const twinPath = path.join(root, MARKDOWN_TWIN);
+if (!fs.existsSync(twinPath)) {
+  bad(`${MARKDOWN_TWIN} is missing — the / rewrite on Accept: text/markdown would serve the 404 page`);
+} else {
+  const twin = fs.readFileSync(twinPath, 'utf8');
+  // Anchored at the start of the file, not at any line: the first thing in a
+  // markdown document is its title, and front matter or a stray preamble ahead
+  // of it is exactly the kind of "generator crept in" change to reject.
+  if (!/^#[ \t]+\S/.test(twin)) {
+    bad(`${MARKDOWN_TWIN} does not start with an ATX H1 ("# Jared Burrows") — the markdown homepage has no title`);
+  }
+  for (const talk of talksFromJs ?? []) {
+    if (!twin.includes(talk.title)) {
+      bad(`${MARKDOWN_TWIN} does not list the talk "${talk.title}" from static/js/talks.js — the HTML and markdown homepages would disagree about the talks`);
+    }
+  }
+}
+
+// The markup half of the same contract: an agent that parses HTML rather than
+// guessing URLs finds the twin through rel=alternate, and it is the only
+// discovery path that works if the zone rule is ever removed.
+const headMatch = indexHtml.match(/<head\b[^>]*>([\s\S]*?)<\/head>/i);
+if (!headMatch) {
+  bad('index.html: no <head> element found');
+} else {
+  const alternateLink = [...headMatch[1].matchAll(/<link\b[^>]*>/gi)]
+    .map(([tag]) => tag)
+    .find((tag) => /\srel="alternate"/i.test(tag) && /\stype="text\/markdown"/i.test(tag));
+  if (!alternateLink) {
+    bad(`index.html head has no <link rel="alternate" type="text/markdown"> pointing at /${MARKDOWN_TWIN}`);
+  } else if (!new RegExp(`\\shref="/${MARKDOWN_TWIN.replace('.', '\\.')}"`).test(alternateLink)) {
+    bad(`index.html rel=alternate markdown link does not point at /${MARKDOWN_TWIN}: ${alternateLink}`);
+  }
+}
+
+// And the cache half: / has two representations now, so a downstream cache that
+// never sees the Accept header would be free to hand the markdown to a browser.
+// Cloudflare's own Markdown-for-Agents feature adds this header for the same
+// reason; ours is static, so _headers is where it has to live.
+const homepageRule = headerRuleValues('/');
+if (!homepageRule) {
+  bad('_headers has no "/" rule, so the homepage cannot carry Vary: Accept');
+} else {
+  const varyValues = homepageRule
+    .filter((line) => /^Vary:/i.test(line))
+    .flatMap((line) => line.slice(line.indexOf(':') + 1).split(',').map((value) => value.trim().toLowerCase()));
+  if (!varyValues.includes('accept')) {
+    bad('_headers "/" rule does not set Vary: Accept — / is content-negotiated between HTML and markdown, so caches must key on Accept');
+  }
+}
+
 // --- _headers: the same header set by two rules that can match one path
 // comma-joins into a single broken value. Overlap heuristic: a glob's
 // "sample" is the glob with * removed; two patterns overlap when either
@@ -548,4 +613,4 @@ if (errors.length > 0) {
   for (const message of errors) console.error(`  - ${message}`);
   process.exit(1);
 }
-console.log('✓ site invariants hold (CSP parity + coverage, embed referer, id contract, file references, JSON-LD, auth.md discovery, API catalog, ARD manifest, _headers overlap, _redirects syntax)');
+console.log('✓ site invariants hold (CSP parity + coverage, embed referer, id contract, file references, JSON-LD, auth.md discovery, markdown twin, API catalog, ARD manifest, _headers overlap, _redirects syntax)');
