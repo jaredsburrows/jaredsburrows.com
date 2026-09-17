@@ -91,7 +91,7 @@
         ? card(`https://www.youtube.com/watch?v=${talk.youtube}`,
                `https://img.youtube.com/vi/${talk.youtube}/hqdefault.jpg`,
                'Watch on YouTube')
-        : embed(`https://www.youtube-nocookie.com/embed/${talk.youtube}`, `${talk.title} — video`,
+        : embed(`https://www.youtube-nocookie.com/embed/${talk.youtube}`, `${talk.title} (video)`,
                 'fullscreen; encrypted-media; picture-in-picture'));
     }
     if (talk.speakerdeck) {
@@ -99,7 +99,7 @@
         ? card(`https://speakerdeck.com/player/${talk.speakerdeck}`,
                `https://speakerd.s3.amazonaws.com/presentations/${talk.speakerdeck}/slide_0.jpg`,
                'View slides on Speaker Deck')
-        : embed(`https://speakerdeck.com/player/${talk.speakerdeck}`, `${talk.title} — slides`,
+        : embed(`https://speakerdeck.com/player/${talk.speakerdeck}`, `${talk.title} (slides)`,
                 'fullscreen'));
     }
   };
