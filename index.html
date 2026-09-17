@@ -40,6 +40,10 @@
     <link rel="icon" href="favicon.ico" type="image/x-icon">
     <link rel="canonical" href="https://jaredsburrows.com/">
     <link rel="apple-touch-icon" href="apple-touch-icon.png">
+    <!-- RFC 9727 §3: the markup form of the api-catalog relation, alongside the
+         Link header _headers sets on / — an agent that only parses HTML finds
+         the catalog too. -->
+    <link rel="api-catalog" href="/.well-known/api-catalog">
     <meta name="theme-color" content="#121211" media="(prefers-color-scheme: dark)">
     <meta name="theme-color" content="#faf9f7" media="(prefers-color-scheme: light)">
     <!-- Deferred: fetched in parallel with the page, run in order after parse

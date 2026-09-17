@@ -32,3 +32,22 @@
 /
   Link: </static/css/home.css>; rel=preload; as=style
   Link: </static/image/avatar.webp>; rel=preload; as=image
+  Link: </.well-known/api-catalog>; rel="api-catalog"
+
+# Talk data and its OpenAPI description change about as often as the talks do,
+# so they get the same one-hour TTL as the other unversioned code assets.
+/api/*
+  Cache-Control: public, max-age=3600
+
+# Media types for the RFC 9727 catalog and the description it points at.
+# Unlike two _headers rules setting one header, an explicit Content-Type
+# replaces the type Cloudflare infers from the file extension instead of
+# joining with it (checked against `wrangler dev`) — which is what lets the
+# extensionless well-known URI be served as a linkset at all. The profile
+# parameter is the RFC's own SHOULD: it marks this linkset as an API catalog
+# rather than just any link set.
+/.well-known/api-catalog
+  Content-Type: application/linkset+json; profile="https://www.rfc-editor.org/info/rfc9727"
+
+/api/openapi.json
+  Content-Type: application/openapi+json;version=3.1
