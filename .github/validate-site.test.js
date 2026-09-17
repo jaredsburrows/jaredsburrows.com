@@ -699,6 +699,47 @@ testFiles('dropping Vary: Accept from the "/" rule fails closed',
 testFiles('Vary listing Accept alongside another field passes',
   { '_headers': originalHeaders.replace('Vary: Accept', 'Vary: Accept, Accept-Encoding') }, 0);
 
+// --- S2: and the half Vary cannot cover. Cloudflare's cache keys on the URL
+// and Accept-Encoding only — it ignores Vary for every other request header —
+// so with two representations on one URL the sole thing keeping markdown out of
+// browsers' hands is that / is never stored (Workers Assets serves it
+// max-age=0, must-revalidate). This repo has already shipped a TTL for other
+// paths twice, so the edit below is the likely one; nothing else in the build
+// would notice it.
+const HOMEPAGE_RULE = '\n/\n  Link: </static/css/home.css>; rel=preload; as=style';
+assert.ok(originalHeaders.includes(HOMEPAGE_RULE),
+  'fixture assumption broken: the _headers "/" rule no longer starts with the home.css preload');
+
+testFiles('a positive max-age on the "/" rule fails closed',
+  { '_headers': originalHeaders.replace(HOMEPAGE_RULE, '\n/\n  Cache-Control: public, max-age=3600\n  Link: </static/css/home.css>; rel=preload; as=style') },
+  1, "Cloudflare's cache ignores Vary");
+
+// s-maxage is the shared-cache TTL specifically — the one an edge reads — so it
+// must not be a way around a check written in terms of max-age.
+testFiles('a positive s-maxage on the "/" rule fails closed',
+  { '_headers': originalHeaders.replace(HOMEPAGE_RULE, '\n/\n  Cache-Control: public, s-maxage=60\n  Link: </static/css/home.css>; rel=preload; as=style') },
+  1, "Cloudflare's cache ignores Vary");
+
+// The rule that carries the TTL need not be "/" itself: /* matches / too, and
+// that is how a site-wide TTL would arrive. Every other Cache-Control is
+// stripped from the fixture so this cannot pass on the overlap check instead.
+testFiles('a positive max-age on a glob that also matches "/" fails closed',
+  { '_headers': `${originalHeaders.split('\n').filter((line) => !line.trim().startsWith('Cache-Control:')).join('\n')}`
+      .replace('/*\n  X-Content-Type-Options: nosniff', '/*\n  Cache-Control: public, max-age=3600\n  X-Content-Type-Options: nosniff') },
+  1, "Cloudflare's cache ignores Vary");
+
+// Zero is not a TTL: pinning the Workers Assets default on / states what
+// already happens and must keep passing, or the check would forbid the very
+// fix it is asking for.
+testFiles('pinning max-age=0, must-revalidate on "/" passes',
+  { '_headers': originalHeaders.replace(HOMEPAGE_RULE, '\n/\n  Cache-Control: public, max-age=0, must-revalidate\n  Link: </static/css/home.css>; rel=preload; as=style') },
+  0);
+
+// The TTLs the rest of the site relies on are untouched by this: none of those
+// paths is negotiated, and this must not turn into a no-caching-anywhere rule.
+testFiles('the unmodified TTLs on /static/* and /api/* still pass',
+  { '_headers': originalHeaders }, 0);
+
 // --- T5a drift guards: the twin is hand-written, so CI is the only thing that
 // can hold it to the files it restates. Each mutation below leaves a green
 // browser experience and a green build while an agent reading /index.md is

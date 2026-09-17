@@ -74,6 +74,17 @@ with a non-zero q, and at least as preferred as `text/html` — it returns
 matched by Cloudflare's asset router before any code runs, so those requests
 are neither slowed down nor billed as Worker invocations.
 
+`/` must never be given a cache TTL. It has two representations on one URL, and
+Cloudflare's cache keys only on the URL and `Accept-Encoding` — it ignores
+`Vary` for every other request header, so a stored copy goes to every client
+whatever its `Accept` says. What keeps them apart today is that `/` is never
+stored: Workers Assets serves it `max-age=0, must-revalidate`, so every hit
+revalidates through the Worker. Adding a `Cache-Control` with a positive
+`max-age` or `s-maxage` for `/` to `_headers` — its own rule or any glob that
+matches it — would let one agent request leave the Markdown in the edge cache
+for every browser and Googlebot behind it. `validate-site.js` fails the build on
+that; `Vary: Accept` stays for downstream caches that do honour it.
+
 Wildcards never select Markdown: a browser ends its `Accept` with `*/*;q=0.8`
 and `curl` sends nothing but `*/*`, so matching one would hand ordinary
 visitors — and Googlebot — a page with no HTML in it. `src/worker.test.mjs` is

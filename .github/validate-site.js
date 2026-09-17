@@ -20,6 +20,10 @@
 //   index.html publishes (no page renders it, so only an agent would notice)
 // - two _headers rules setting the same header on overlapping paths
 //   (values from all matching rules comma-join into one broken header)
+// - a cache TTL on /, which is content-negotiated: Cloudflare's cache ignores
+//   Vary, so a stored copy would be served to every client whatever it asked
+//   for (this one has not shipped — it is the one _headers edit that would
+//   hand the markdown homepage to browsers, and nothing else would go red)
 // The API catalog and JSON-LD checks are the exception: nothing has broken
 // yet, because both are new. The catalog exists because RFC 9727 makes
 // machine-read promises about other files, and a broken one is invisible from
@@ -615,7 +619,9 @@ if (!headMatch) {
 // never sees the Accept header would be free to hand the markdown to a browser.
 // src/worker.mjs sets Vary on the responses it builds, but the ones it hands
 // back untouched (a 304 has no body to re-wrap) get it only from here — and
-// this is also what keeps / varying if the Worker is ever rolled back.
+// this is also what keeps / varying if the Worker is ever rolled back. Vary is
+// only half the protection; the TTL half is checked with the other _headers
+// rules below, because Cloudflare's own cache does not honour Vary.
 const homepageRule = headerRuleValues('/');
 if (!homepageRule) {
   bad('_headers has no "/" rule, so the homepage cannot carry Vary: Accept');
@@ -637,12 +643,16 @@ for (const line of headers.split('\n')) {
   if (/^\s*(#|$)/.test(line)) continue;
   if (/^\S/.test(line)) {
     if (!line.startsWith('/')) bad(`_headers: pattern "${line.trim()}" must start with /`);
-    rules.push({ pattern: line.trim(), names: [] });
+    rules.push({ pattern: line.trim(), names: [], set: [] });
   } else {
     const match = line.trim().match(/^([A-Za-z-]+):\s/);
     if (!match) bad(`_headers: malformed header line "${line.trim()}"`);
     else if (rules.length === 0) bad(`_headers: header line "${line.trim()}" before any pattern`);
-    else rules.at(-1).names.push(match[1]);
+    else {
+      const trimmed = line.trim();
+      rules.at(-1).names.push(match[1]);
+      rules.at(-1).set.push({ name: match[1], value: trimmed.slice(trimmed.indexOf(':') + 1).trim() });
+    }
   }
 }
 const globRegex = (pattern) => new RegExp(`^${pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`);
@@ -653,6 +663,34 @@ for (let i = 0; i < rules.length; i += 1) {
     for (const name of rules[i].names) {
       if (rules[j].names.includes(name)) {
         bad(`_headers: ${name} is set by overlapping rules ${rules[i].pattern} and ${rules[j].pattern} — the values would comma-join`);
+      }
+    }
+  }
+}
+
+// --- _headers: / is content-negotiated, so it must never be given a TTL.
+// Two representations share one URL (src/worker.mjs answers Accept:
+// text/markdown with index.md, everything else with the HTML), and Vary does
+// not protect them from each other at the edge: Cloudflare's cache keys on the
+// URL and Accept-Encoding, and ignores Vary for every other request header —
+// production already returns cf-cache-status: HIT for /, so that cache is in
+// scope. The only thing keeping the two apart today is that / is never stored:
+// Workers Assets serves it max-age=0, must-revalidate, so every hit
+// revalidates through the Worker. Give / a positive max-age or s-maxage — in
+// its own rule or in any glob that matches it — and one agent request with
+// Accept: text/markdown fills the shared entry that every browser and
+// Googlebot behind it then reads. That is cache poisoning of the homepage with
+// nothing else in the build going red, which is why it is an invariant here
+// rather than a comment in _headers. A zero TTL is fine: pinning
+// `Cache-Control: public, max-age=0, must-revalidate` on / states the default
+// rather than changing it.
+const NEGOTIATED_PATH = '/';
+for (const rule of rules.filter((candidate) => globRegex(candidate.pattern).test(NEGOTIATED_PATH))) {
+  for (const { name, value } of rule.set.filter((header) => header.name.toLowerCase() === 'cache-control')) {
+    for (const directive of value.split(',')) {
+      const ttl = directive.trim().match(/^(max-age|s-maxage)\s*=\s*(\d+)$/i);
+      if (ttl && Number(ttl[2]) > 0) {
+        bad(`_headers rule ${rule.pattern} sets ${name}: ${value} on ${NEGOTIATED_PATH} — ${NEGOTIATED_PATH} serves HTML or markdown depending on Accept, and Cloudflare's cache ignores Vary, so a stored copy is handed to every client whatever it asked for: one agent request would leave the markdown homepage in the edge cache for browsers and Googlebot. ${NEGOTIATED_PATH} must keep revalidating (max-age=0)`);
       }
     }
   }
@@ -674,4 +712,4 @@ if (errors.length > 0) {
   for (const message of errors) console.error(`  - ${message}`);
   process.exit(1);
 }
-console.log('✓ site invariants hold (CSP parity + coverage, embed referer, id contract, file references, JSON-LD, auth.md discovery, markdown twin, API catalog, ARD manifest, _headers overlap, _redirects syntax)');
+console.log('✓ site invariants hold (CSP parity + coverage, embed referer, id contract, file references, JSON-LD, auth.md discovery, markdown twin, API catalog, ARD manifest, _headers overlap, / stays uncacheable, _redirects syntax)');
