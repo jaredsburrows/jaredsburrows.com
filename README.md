@@ -33,7 +33,25 @@ no cache-busting query strings.
 
 ### Add a talk
 
-Add one entry to `static/js/talks.js`.
+Add one entry to `static/js/talks.js`, then mirror it into `api/talks.json`
+(see below). CI fails if the two disagree.
+
+### API
+
+`/api/talks.json` serves the talks as JSON, described by `api/openapi.json`
+(OpenAPI 3.1) and documented at `/api/`. `/.well-known/api-catalog` advertises
+all three as an [RFC 9727](https://www.rfc-editor.org/rfc/rfc9727) linkset, so
+an agent can find the API without being told where it is.
+
+`static/js/talks.js` stays the source a human edits — the homepage loads it
+directly, including over `file://`, which a `fetch` of the JSON would break.
+`api/talks.json` is its published copy. To regenerate it after editing a talk:
+
+```
+node -e 'global.window={};require("./static/js/talks.js");
+require("fs").writeFileSync("api/talks.json",
+  JSON.stringify({talks:window.TALKS},null,2)+"\n")'
+```
 
 ### Update the avatar
 

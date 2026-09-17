@@ -1,0 +1,141 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "jaredsburrows.com Talks API",
+    "version": "1.0.0",
+    "summary": "Read-only conference talk data for jaredsburrows.com.",
+    "description": "A small read-only API over the talks listed on jaredsburrows.com. It is served as static JSON from Cloudflare's edge, so GET is the only supported method: there is no write surface, no authentication and no rate limiting. The same data drives the Presentations section of the homepage.",
+    "license": {
+      "name": "Apache-2.0",
+      "identifier": "Apache-2.0"
+    },
+    "contact": {
+      "name": "Jared Burrows",
+      "url": "https://jaredsburrows.com"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://jaredsburrows.com",
+      "description": "Production"
+    }
+  ],
+  "security": [],
+  "paths": {
+    "/api/talks.json": {
+      "get": {
+        "operationId": "listTalks",
+        "summary": "List every talk",
+        "description": "Returns all talks, newest first. The list is small and unpaginated by design.",
+        "responses": {
+          "200": {
+            "description": "The full list of talks.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TalkList" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health.json": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Availability probe",
+        "description": "Returns a static document. Because this API is static assets on a CDN, a 200 here means the edge is serving the site — it is an availability signal, not a check of downstream dependencies, because there are none.",
+        "responses": {
+          "200": {
+            "description": "The site is being served.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Health" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "TalkList": {
+        "type": "object",
+        "required": ["talks"],
+        "additionalProperties": false,
+        "properties": {
+          "talks": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Talk" }
+          }
+        }
+      },
+      "Talk": {
+        "type": "object",
+        "description": "One talk. Every talk carries slides, a video, or both.",
+        "required": ["date", "title", "where"],
+        "additionalProperties": false,
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Date the talk was given, as a zero-padded calendar date.",
+            "examples": ["2017-11-05"]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "examples": ["Make Your Build Great Again"]
+          },
+          "where": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Conference or venue.",
+            "examples": ["Droidcon"]
+          },
+          "location": {
+            "type": "string",
+            "minLength": 1,
+            "description": "City, region and country.",
+            "examples": ["San Francisco, CA, USA"]
+          },
+          "link": {
+            "type": "string",
+            "format": "uri",
+            "description": "The event page. Several point at the Internet Archive, because the originals are gone.",
+            "examples": ["https://web.archive.org/web/20171019135514/https://sf.droidcon.com/"]
+          },
+          "speakerdeck": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$",
+            "description": "Speaker Deck deck id. One talk given at several venues reuses a single deck.",
+            "examples": ["4206b3835eb141ba84cb91cb95cef7f6"]
+          },
+          "youtube": {
+            "type": "string",
+            "pattern": "^[\\w-]{11}$",
+            "description": "YouTube video id.",
+            "examples": ["rvwAlbtbtmM"]
+          },
+          "description": {
+            "type": "array",
+            "description": "Abstract, one string per paragraph.",
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      },
+      "Health": {
+        "type": "object",
+        "required": ["status"],
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["ok"]
+          }
+        }
+      }
+    }
+  }
+}
