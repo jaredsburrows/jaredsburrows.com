@@ -691,22 +691,51 @@ for (let i = 0; i < rules.length; i += 1) {
 // rather than a comment in _headers. A zero TTL is fine: pinning
 // `Cache-Control: public, max-age=0, must-revalidate` on / states the default
 // rather than changing it.
+//
+// The Worker pins the same value on the markdown response (src/worker.mjs,
+// SECURITY.md S6), which covers the route this check cannot see — that response
+// republishes /index.md's headers under / — and this check covers the route the
+// pin cannot: a TTL on / itself, where the HTML branch hands the asset router's
+// response straight back. Neither is a substitute for the other, and neither
+// can see a zone-level Cache Rule (README says so).
 const NEGOTIATED_PATH = '/';
+// Every header name that decides how long a copy of / may be reused, not just
+// the obvious one: Cloudflare reads CDN-Cache-Control for its own cache and
+// Cloudflare-CDN-Cache-Control ahead of both, and strips neither's answer into
+// the response a browser sees — so checking Cache-Control alone misses the two
+// spellings a Cloudflare-specific "how do I cache this?" reaches for, and
+// misses them invisibly (SECURITY.md S7).
+const TTL_HEADERS = ['cache-control', 'cdn-cache-control', 'cloudflare-cdn-cache-control'];
+// Every directive that lets a shared cache answer from a stored copy instead of
+// revalidating through the Worker. stale-while-revalidate and stale-if-error do
+// it after max-age has run out, so `max-age=0, stale-while-revalidate=600` is
+// the same poisoning window arriving by another route.
+const TTL_DIRECTIVES = ['max-age', 's-maxage', 'stale-while-revalidate', 'stale-if-error'];
 for (const rule of rules.filter((candidate) => globRegex(candidate.pattern).test(NEGOTIATED_PATH))) {
-  for (const { name, value } of rule.set.filter((header) => header.name.toLowerCase() === 'cache-control')) {
+  const poisons = (name, value) => bad(`_headers rule ${rule.pattern} sets ${name}: ${value} on ${NEGOTIATED_PATH} — ${NEGOTIATED_PATH} serves HTML or markdown depending on Accept, and Cloudflare's cache ignores Vary, so a stored copy is handed to every client whatever it asked for: one agent request would leave the markdown homepage in the edge cache for browsers and Googlebot. ${NEGOTIATED_PATH} must keep revalidating (max-age=0)`);
+  for (const { name, value } of rule.set) {
+    const header = name.toLowerCase();
+    // Expires is the weakest of these — Workers Assets' own max-age=0 outranks
+    // it unless the rule replaces Cache-Control too — but it is still a TTL
+    // written for /, and the rule that does both is one line away. `Expires: 0`
+    // is the conventional spelling of "already stale" and is not a TTL.
+    if (header === 'expires' && value.trim() !== '0') poisons(name, value);
+    if (!TTL_HEADERS.includes(header)) continue;
     for (const directive of value.split(',')) {
-      // Any delta-seconds that is not zero, however it is spelled. The check
-      // used to require digits only, which let `max-age=60.0` through (BUGS.md
-      // B4) — RFC 9111's grammar is 1*DIGIT, so a strict cache ignores that
-      // directive entirely, but "strict" is not a property the edge guarantees
-      // and some implementations read the leading 60. The same argument covers
-      // `+600` and `6e2`, so the test is "is this zero?" rather than a list of
+      // Quotes are legal around a directive value (RFC 9111 §5.2.6), so they
+      // are stripped rather than allowed to hide the number. Then: any
+      // delta-seconds that is not zero, however it is spelled. The check used
+      // to require digits only, which let `max-age=60.0` through (BUGS.md B4) —
+      // RFC 9111's grammar is 1*DIGIT, so a strict cache ignores that directive
+      // entirely, but "strict" is not a property the edge guarantees and some
+      // implementations read the leading 60. The same argument covers `+600`
+      // and `6e2`, so the test is "is this zero?" rather than a list of
       // spellings: a value that no cache honours costs a build on a header that
       // had no business being on / anyway, while a value one cache honours is
       // the whole finding.
-      const ttl = directive.trim().match(/^(max-age|s-maxage)\s*=\s*(\S+)$/i);
-      if (ttl && Number(ttl[2]) !== 0) {
-        bad(`_headers rule ${rule.pattern} sets ${name}: ${value} on ${NEGOTIATED_PATH} — ${NEGOTIATED_PATH} serves HTML or markdown depending on Accept, and Cloudflare's cache ignores Vary, so a stored copy is handed to every client whatever it asked for: one agent request would leave the markdown homepage in the edge cache for browsers and Googlebot. ${NEGOTIATED_PATH} must keep revalidating (max-age=0)`);
+      const ttl = directive.trim().match(/^([a-z-]+)\s*=\s*"?([^"]*)"?$/i);
+      if (ttl && TTL_DIRECTIVES.includes(ttl[1].toLowerCase()) && Number(ttl[2]) !== 0) {
+        poisons(name, value);
       }
     }
   }

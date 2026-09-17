@@ -746,6 +746,42 @@ testFiles('pinning max-age=0, must-revalidate on "/" passes',
   { '_headers': originalHeaders.replace(HOMEPAGE_RULE, '\n/\n  Cache-Control: public, max-age=0, must-revalidate\n  Link: </static/css/home.css>; rel=preload; as=style') },
   0);
 
+// S7: the same TTL, spelled the other ways. Cloudflare reads CDN-Cache-Control
+// for its own cache and Cloudflare-CDN-Cache-Control ahead of everything, and
+// neither reaches the browser — so a check written against Cache-Control alone
+// misses them, and misses them invisibly. stale-while-revalidate and
+// stale-if-error reopen the same window after max-age has run out, and a quoted
+// value is legal syntax that must not hide the number behind it.
+const HOMEPAGE_TTL_FORMS = [
+  ['CDN-Cache-Control', 'CDN-Cache-Control: public, max-age=600'],
+  ['Cloudflare-CDN-Cache-Control', 'Cloudflare-CDN-Cache-Control: public, max-age=600'],
+  ['stale-while-revalidate', 'Cache-Control: public, max-age=0, stale-while-revalidate=600'],
+  ['stale-if-error', 'Cache-Control: public, max-age=0, stale-if-error=600'],
+  ['a quoted max-age', 'Cache-Control: public, max-age="600"'],
+  ['a far-future Expires', 'Expires: Thu, 31 Dec 2099 23:59:59 GMT'],
+];
+for (const [what, header] of HOMEPAGE_TTL_FORMS) {
+  testFiles(`${what} on the "/" rule fails closed`,
+    { '_headers': originalHeaders.replace(HOMEPAGE_RULE, `\n/\n  ${header}\n  Link: </static/css/home.css>; rel=preload; as=style`) },
+    1, "Cloudflare's cache ignores Vary");
+}
+
+// And the other side of each: saying "do not store this" in any of those
+// spellings is the property the invariant wants, not a violation of it.
+// `Expires: 0` is the conventional "already stale", not a TTL.
+const HOMEPAGE_NO_TTL_FORMS = [
+  'CDN-Cache-Control: no-store',
+  'Cloudflare-CDN-Cache-Control: public, max-age=0, must-revalidate',
+  'Cache-Control: public, max-age="0"',
+  'Cache-Control: public, max-age=0, stale-while-revalidate=0',
+  'Expires: 0',
+];
+for (const header of HOMEPAGE_NO_TTL_FORMS) {
+  testFiles(`"${header}" on the "/" rule passes`,
+    { '_headers': originalHeaders.replace(HOMEPAGE_RULE, `\n/\n  ${header}\n  Link: </static/css/home.css>; rel=preload; as=style`) },
+    0);
+}
+
 // The TTLs the rest of the site relies on are untouched by this: none of those
 // paths is negotiated, and this must not turn into a no-caching-anywhere rule.
 testFiles('the unmodified TTLs on /static/* and /api/* still pass',
