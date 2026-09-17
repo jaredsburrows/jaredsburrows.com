@@ -15,6 +15,16 @@
     <meta name="description" content="Jared Burrows — software engineer specializing in Android and Kotlin. Open-source maintainer (gradle-license-plugin), conference speaker, blog, talks and projects.">
     <link rel="preload" href="static/image/avatar.webp" as="image" fetchpriority="high">
 
+    <!-- Warms TLS for the two APIs home.js polls after parse, so the footer
+         counters land sooner when a number has actually changed. These were
+         dropped once as ceremony and come back for that latency alone: the
+         counts are baked into the HTML and neither origin is on the critical
+         path, so this does nothing for LCP whatever Lighthouse estimates.
+         fetch() sends no credentials cross-origin, so the hints must be
+         anonymous (crossorigin) or the sockets they open go unused. -->
+    <link rel="preconnect" href="https://api.github.com" crossorigin>
+    <link rel="preconnect" href="https://api.stackexchange.com" crossorigin>
+
     <!-- Global site tag (gtag.js) - Google Analytics -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-69EHJ9K7LX"></script>
     <script>
