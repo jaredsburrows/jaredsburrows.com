@@ -1,0 +1,32 @@
+{
+  "specVersion": "1.0",
+  "host": {
+    "displayName": "Jared Burrows",
+    "identifier": "https://jaredsburrows.com"
+  },
+  "entries": [
+    {
+      "identifier": "urn:air:jaredsburrows.com:api:talks",
+      "displayName": "Talks API",
+      "description": "Read-only OpenAPI 3.1 description of the Talks API: two GET endpoints over Jared Burrows' conference talks and a static availability probe, with no authentication and no write surface.",
+      "type": "application/openapi+json",
+      "url": "https://jaredsburrows.com/api/openapi.json",
+      "representativeQueries": [
+        "what conference talks has Jared Burrows given",
+        "find the video and slides for Jared Burrows' Android talks",
+        "list Jared Burrows' presentations by year"
+      ]
+    },
+    {
+      "identifier": "urn:air:jaredsburrows.com:data:talks",
+      "displayName": "Talks dataset",
+      "description": "The talk data itself: a JSON object holding a talks array, newest first, where each talk carries its date, title, venue, location, event link, abstract paragraphs and — where they exist — Speaker Deck and YouTube ids.",
+      "type": "application/json",
+      "url": "https://jaredsburrows.com/api/talks.json",
+      "representativeQueries": [
+        "when and where did Jared Burrows speak at Droidcon",
+        "get the abstract for Jared Burrows' talk The Road to Single Dex"
+      ]
+    }
+  ]
+}
