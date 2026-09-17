@@ -699,5 +699,68 @@ testFiles('dropping Vary: Accept from the "/" rule fails closed',
 testFiles('Vary listing Accept alongside another field passes',
   { '_headers': originalHeaders.replace('Vary: Accept', 'Vary: Accept, Accept-Encoding') }, 0);
 
+// --- T5a drift guards: the twin is hand-written, so CI is the only thing that
+// can hold it to the files it restates. Each mutation below leaves a green
+// browser experience and a green build while an agent reading /index.md is
+// served something the site no longer says.
+const META_DESCRIPTION = (originalIndexHtml.match(/<meta name="description" content="([^"]*)">/) ?? [])[1];
+assert.ok(META_DESCRIPTION, 'fixture assumption broken: index.html has no <meta name="description">');
+// Read as "the paragraph after the H1", never as a hardcoded line range: the
+// lede is soft-wrapped, so a re-wrap or a longer description changes how many
+// lines it occupies, and a slice would then compare the wrong text — which is a
+// test that passes for the wrong reason rather than one that fails loudly.
+const ledeOf = (markdown) => {
+  const lines = markdown.split('\n').slice(1);
+  const start = lines.findIndex((line) => line.trim() !== '');
+  const end = lines.findIndex((line, index) => index > start && line.trim() === '');
+  return lines.slice(start, end === -1 ? undefined : end);
+};
+assert.strictEqual(
+  ledeOf(originalIndexMd).map((line) => line.trim()).join(' '), META_DESCRIPTION,
+  'fixture assumption broken: index.md no longer opens with the meta description as its first paragraph');
+
+// The sentence exists twice — once as the meta description, once as the twin's
+// lede — and nothing renders both, so only a comparison catches a one-sided
+// edit. Both sides are tested: either file can be the one that moves.
+testFiles('editing the twin lede away from the meta description fails closed',
+  { 'index.md': originalIndexMd.replace('Android and Kotlin development', 'Android development') },
+  1, "opening paragraph is not index.html's meta description");
+
+testFiles('editing the meta description away from the twin lede fails closed',
+  { 'index.html': originalIndexHtml.replace(META_DESCRIPTION, 'Jared Burrows — software engineer.') },
+  1, "opening paragraph is not index.html's meta description");
+
+// Markdown soft-wraps: a newline inside a paragraph renders as a space, so
+// re-wrapping the lede changes no rendered byte and must keep passing. Without
+// this the invariant would be a line-length rule wearing a content-check hat.
+testFiles('re-wrapping the twin lede onto one line passes',
+  { 'index.md': originalIndexMd.replace(ledeOf(originalIndexMd).join('\n'), META_DESCRIPTION) },
+  0);
+
+// The reverse drift the forward check could never see: a talk is retired from
+// talks.js and api/talks.json, and the twin keeps publishing it to agents.
+testFiles('a talk deleted from talks.js but left in index.md fails closed', (() => {
+  const remaining = JSON.parse(originalTalksJson).talks.filter((talk) => talk.title !== 'Make Your Build Great Again');
+  assert.strictEqual(remaining.length, JSON.parse(originalTalksJson).talks.length - 1,
+    'fixture assumption broken: talks.js no longer publishes "Make Your Build Great Again"');
+  return {
+    'static/js/talks.js': `window.TALKS = ${JSON.stringify(remaining, null, 2)};\n`,
+    'api/talks.json': `${JSON.stringify({ talks: remaining }, null, 2)}\n`,
+  };
+})(), 1, 'lists a talk "Make Your Build Great Again" that static/js/talks.js does not publish');
+
+// Two talks share the title "The Road to Single Dex", so dropping one of them
+// is invisible to a containment test — the other heading still satisfies it.
+// Counting the headings is what makes this fail.
+testFiles('dropping one of the two same-titled talk headings fails closed',
+  { 'index.md': originalIndexMd.replace('### The Road to Single Dex\n\nGDG SF Meetup', 'GDG SF Meetup') },
+  1, 'lists the talk "The Road to Single Dex" 1 time(s) but static/js/talks.js publishes it 2 time(s)');
+
+// Only `### ` headings inside `## Talks` count as listing a talk: a title that
+// survives in prose elsewhere reads like coverage and is not.
+testFiles('a talk title kept only in prose outside the Talks section fails closed',
+  { 'index.md': `${originalIndexMd.replace('### Make Your Build Great Again\n\n', '')}\nSee also Make Your Build Great Again.\n` },
+  1, 'does not list the talk "Make Your Build Great Again"');
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

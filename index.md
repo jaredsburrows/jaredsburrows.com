@@ -6,10 +6,6 @@ Grumman. I specialize in Android and Kotlin development, shipping award-winning
 apps used by millions. Open-source maintainer and conference speaker, including
 Droidcon.
 
-This is the Markdown twin of [the homepage](https://jaredsburrows.com/) — same
-content, none of the markup. It is hand-written and hand-kept in sync with
-`index.html`; CI fails if it stops listing the talks the site publishes.
-
 ## Elsewhere
 
 - [Blog](https://blog.jaredsburrows.com) — longer posts, usually about Android

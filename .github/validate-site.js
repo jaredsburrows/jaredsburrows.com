@@ -511,10 +511,11 @@ if (!fs.existsSync(authMdPath)) {
 // hand-written on purpose (generating it would be the build step this site has
 // never had), so it can only be kept honest by checking it against the files it
 // restates: it must exist, it must open with the H1 a markdown reader shows as
-// the title, and it must still list every talk `static/js/talks.js` publishes.
-// The last one is the drift that will actually happen: a talk gets added to
-// talks.js and api/talks.json (README tells you to do both) and the twin quietly
-// keeps serving the old list to every agent that prefers markdown.
+// the title, its opening paragraph must be index.html's meta description
+// verbatim, and its talks list must agree with `static/js/talks.js` in both
+// directions. The talks one is the drift that will actually happen: a talk gets
+// added to talks.js and api/talks.json (README tells you to do both) and the
+// twin quietly keeps serving the old list to every agent that prefers markdown.
 const MARKDOWN_TWIN = 'index.md';
 const twinPath = path.join(root, MARKDOWN_TWIN);
 if (!fs.existsSync(twinPath)) {
@@ -527,9 +528,68 @@ if (!fs.existsSync(twinPath)) {
   if (!/^#[ \t]+\S/.test(twin)) {
     bad(`${MARKDOWN_TWIN} does not start with an ATX H1 ("# Jared Burrows") — the markdown homepage has no title`);
   }
-  for (const talk of talksFromJs ?? []) {
-    if (!twin.includes(talk.title)) {
-      bad(`${MARKDOWN_TWIN} does not list the talk "${talk.title}" from static/js/talks.js — the HTML and markdown homepages would disagree about the talks`);
+
+  // The lede has exactly one source. index.html's <meta name="description"> is
+  // the sentence search engines and link unfurls quote; the twin's opening
+  // paragraph is that same sentence for an agent reading markdown instead. Two
+  // hand-written copies of one sentence drift silently — nothing renders both —
+  // so they are compared here. The only normalisation is Markdown's own soft
+  // wrap (a single newline inside a paragraph renders as a space), so what is
+  // compared is the rendered text, byte for byte. Both sides stay plain text: an
+  // HTML entity on one side and its character on the other fails this check, and
+  // the fix is to keep both plain rather than to teach it to decode.
+  const descriptionMatch = indexHtml.match(/<meta\s+name="description"\s+content="([^"]*)"/i);
+  if (!descriptionMatch) {
+    bad('index.html: <meta name="description"> not found, so the markdown twin has nothing to match its opening paragraph against');
+  } else if (/^#[ \t]+\S/.test(twin)) {
+    const lines = twin.split('\n');
+    const lede = [];
+    for (let i = 1; i < lines.length; i += 1) {
+      const line = lines[i].trim();
+      if (line === '') {
+        if (lede.length > 0) break;
+        continue;
+      }
+      lede.push(line);
+    }
+    if (lede.join(' ') !== descriptionMatch[1]) {
+      bad(`${MARKDOWN_TWIN} opening paragraph is not index.html's meta description verbatim — the same sentence is written twice and one copy has drifted\n      ${MARKDOWN_TWIN}:   ${lede.join(' ')}\n      index.html: ${descriptionMatch[1]}`);
+    }
+  }
+
+  // The talks list, in both directions. The forward half (every published talk
+  // is in the twin) catches the add that forgets the twin; the reverse half
+  // catches the delete that forgets it, which is the one nothing else can see —
+  // a talk dropped from talks.js and api/talks.json keeps being served to every
+  // agent that reads markdown. Counted, not set-compared, because two talks
+  // share the title "The Road to Single Dex", so losing one of them is invisible
+  // to a containment test. Only `### ` headings inside the `## Talks` section
+  // count: prose elsewhere in the file that mentions a title must not satisfy
+  // the requirement, and a heading outside that section is not part of the
+  // twin's talks list. Order is not checked — the HTML page sorts itself.
+  const twinLines = twin.split('\n');
+  const talksHeading = twinLines.findIndex((line) => /^##[ \t]+Talks[ \t]*$/.test(line));
+  if (talksHeading === -1) {
+    bad(`${MARKDOWN_TWIN} has no "## Talks" section — the markdown homepage publishes no talks at all`);
+  } else {
+    const listed = [];
+    for (let i = talksHeading + 1; i < twinLines.length && !/^##[ \t]/.test(twinLines[i]); i += 1) {
+      const heading = twinLines[i].match(/^###[ \t]+(.*?)[ \t]*$/);
+      if (heading) listed.push(heading[1]);
+    }
+    const tally = (titles) => titles.reduce((counts, title) => counts.set(title, (counts.get(title) ?? 0) + 1), new Map());
+    const published = tally((talksFromJs ?? []).map((talk) => talk.title));
+    const twinned = tally(listed);
+    for (const title of new Set([...published.keys(), ...twinned.keys()])) {
+      const inJs = published.get(title) ?? 0;
+      const inTwin = twinned.get(title) ?? 0;
+      if (inTwin === 0) {
+        bad(`${MARKDOWN_TWIN} does not list the talk "${title}" from static/js/talks.js — the HTML and markdown homepages would disagree about the talks`);
+      } else if (inJs === 0) {
+        bad(`${MARKDOWN_TWIN} lists a talk "${title}" that static/js/talks.js does not publish — the markdown homepage would keep serving a talk the site has dropped`);
+      } else if (inJs !== inTwin) {
+        bad(`${MARKDOWN_TWIN} lists the talk "${title}" ${inTwin} time(s) but static/js/talks.js publishes it ${inJs} time(s) — the HTML and markdown homepages would disagree about the talks`);
+      }
     }
   }
 }
