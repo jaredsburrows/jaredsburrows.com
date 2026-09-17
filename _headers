@@ -52,3 +52,16 @@
 
 /api/openapi.json
   Content-Type: application/openapi+json;version=3.1
+
+# ARD manifest, dual-published at both well-known paths. Access-Control-Allow-
+# Origin is what the scanner's SKILL.md asks for: the server-side scan does not
+# need it, but a browser-based agent reading the manifest from another origin
+# does. No Content-Type rule here — unlike the extensionless api-catalog above,
+# these end in .json and Cloudflare infers application/json from the extension.
+# Exact paths, no globs: /* also matches them, so this file may only add a
+# header /* does not already set, or the two values would comma-join.
+/.well-known/ai-catalog.json
+  Access-Control-Allow-Origin: *
+
+/.well-known/ard.json
+  Access-Control-Allow-Origin: *
