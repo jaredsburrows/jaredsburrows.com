@@ -27,8 +27,8 @@ const { execFileSync } = require('child_process');
 
 const repoRoot = path.join(__dirname, '..');
 const validator = path.join(__dirname, 'validate-site.js');
-// Full tree (minus VCS/tooling dirs) so the file-reference and _redirects-stub
-// checks — unrelated to what these tests probe — see every asset they expect.
+// Full tree (minus VCS/tooling dirs) so the file-reference check — unrelated to
+// what these tests probe — sees every asset it expects.
 const skipTopLevel = new Set(['.git', '.github', '.idea', '.wrangler', 'node_modules']);
 const originalHomeJs = fs.readFileSync(path.join(repoRoot, 'static/js/home.js'), 'utf8');
 

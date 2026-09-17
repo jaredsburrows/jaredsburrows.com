@@ -43,8 +43,11 @@ jobs:
       - name: Install Nu HTML Checker
         run: npm install --no-save vnu-jar
 
+      # Every tracked .html, resolved at run time. A literal list silently stops
+      # covering pages that are added later, and vnu exits 0 on a path that
+      # matches nothing — so a stale list reads green while checking nothing.
       - name: Validate HTML
-        run: java -jar node_modules/vnu-jar/build/dist/vnu.jar index.html 404.html */index.html
+        run: git ls-files '*.html' | xargs java -jar node_modules/vnu-jar/build/dist/vnu.jar
 
       - name: Check JavaScript syntax
         run: for f in static/js/*.js; do node --check "$f"; done

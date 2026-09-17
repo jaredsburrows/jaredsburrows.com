@@ -11,8 +11,6 @@
 // - a page or _headers preload referencing a local file that doesn't exist
 // - two _headers rules setting the same header on overlapping paths
 //   (values from all matching rules comma-join into one broken header)
-// - a _redirects source whose directory has no stub for the GitHub Pages
-//   mirror, which ignores _redirects
 // Usage: node .github/validate-site.js [site root]
 'use strict';
 
@@ -223,19 +221,14 @@ for (let i = 0; i < rules.length; i += 1) {
   }
 }
 
-// --- _redirects: well-formed lines, and every source keeps a stub for the
-// GitHub Pages mirror (which serves the files raw and ignores _redirects).
+// --- _redirects: well-formed lines. Cloudflare consumes this file and issues
+// the 301 before any asset is served, so a source needs no file behind it.
 for (const line of redirects.split('\n')) {
   if (/^\s*(#|$)/.test(line)) continue;
   const [source, target, status, extra] = line.trim().split(/\s+/);
   if (!source?.startsWith('/') || !target || extra !== undefined
       || (status !== undefined && !['301', '302', '307', '308'].includes(status))) {
     bad(`_redirects: malformed line "${line.trim()}"`);
-    continue;
-  }
-  const stub = path.join(root, source.replace(/\/$/, ''), 'index.html');
-  if (!fs.existsSync(stub)) {
-    bad(`_redirects: ${source} has no ${path.relative(root, stub)} stub for the GitHub Pages mirror`);
   }
 }
 
@@ -244,4 +237,4 @@ if (errors.length > 0) {
   for (const message of errors) console.error(`  - ${message}`);
   process.exit(1);
 }
-console.log('✓ site invariants hold (CSP parity + coverage, embed referer, id contract, file references, _headers overlap, _redirects stubs)');
+console.log('✓ site invariants hold (CSP parity + coverage, embed referer, id contract, file references, _headers overlap, _redirects syntax)');
