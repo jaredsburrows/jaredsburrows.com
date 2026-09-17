@@ -348,13 +348,14 @@ for (const [, reference] of headers.matchAll(/Link:\s*<([^>]+)>/g)) {
 // field carries the same absolute avatar URL the meta tags do, and a rename
 // has to move all of them together.
 //
-// Every block is parsed and reported on its own: a page carries more than one
-// (a ProfilePage plus a WebSite site name), and a check that stopped at the
-// first match would cover the second never at all. Everything below reads the
-// PARSED object, never the file text — the blocks sit next to HTML comments
-// documenting what was deliberately left out, so `grep SearchAction
-// index.html` prints 1 on a page whose JSON-LD contains no such thing, and an
-// invariant written as a text search would fire on the comment.
+// Every block is parsed and reported on its own: a page may carry more than
+// one (the Person entity, plus a WebSite block for the site name beside it),
+// and a check that stopped at the first match would cover the second never at
+// all. Everything below reads the PARSED object, never the file text — the
+// blocks sit next to HTML comments documenting what was deliberately left out,
+// so `grep SearchAction index.html` prints 1 on a page whose JSON-LD contains
+// no such thing, and an invariant written as a text search would fire on the
+// comment.
 //
 // @context is matched by URL host, not by substring: 'https://schema.org.org'
 // and 'https://schema.org.example.com' both contain the string and both mean
