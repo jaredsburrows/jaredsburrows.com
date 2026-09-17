@@ -466,6 +466,66 @@ testFiles('an off-origin og:image is not treated as a local file', {
   'index.html': originalIndexHtml.replace(
     /(property="og:image" content=)"[^"]+"/, '$1"https://example.com/avatar.jpg"'),
 }, 0);
+// --- ARD capability manifest. Two hand-maintained copies of one document at
+// two well-known paths, plus a robots.txt pointer and two head link tags. None
+// of it renders, nothing at runtime reads it, and a conforming robots parser
+// ignores the directive it does not know — so every failure mode below is
+// silent in a browser and only shows up as an agent fetching a capability that
+// is not there, which is worse than publishing nothing.
+const AI_CATALOG = '.well-known/ai-catalog.json';
+const ARD = '.well-known/ard.json';
+const originalAiCatalog = fs.readFileSync(path.join(repoRoot, AI_CATALOG), 'utf8');
+const originalRobots = fs.readFileSync(path.join(repoRoot, 'robots.txt'), 'utf8');
+assert.strictEqual(originalAiCatalog, fs.readFileSync(path.join(repoRoot, ARD), 'utf8'),
+  `fixture assumption broken: ${AI_CATALOG} and ${ARD} are no longer byte-identical`);
+assert.ok(originalAiCatalog.includes('https://jaredsburrows.com/api/openapi.json'),
+  `fixture assumption broken: ${AI_CATALOG} no longer advertises api/openapi.json`);
+assert.ok(/^Agentmap:\s*\S+$/m.test(originalRobots),
+  'fixture assumption broken: robots.txt no longer has an Agentmap directive');
+
+// Edit one copy to valid-but-different and the pair silently disagrees about
+// what this origin offers, depending on which path the agent's spec revision
+// told it to fetch. One character is enough to prove the check is byte-exact
+// rather than structural.
+testFiles('a one-character drift between the two manifest copies fails closed',
+  { [ARD]: originalAiCatalog.replace('"Talks dataset"', '"Talks Dataset"') },
+  1, 'are not byte-identical');
+
+// A manifest that does not parse is worse than no manifest: the well-known
+// path answers 200, so a client stops looking for one.
+testFiles('a manifest that is not valid JSON fails closed',
+  { [AI_CATALOG]: originalAiCatalog.replace('"entries": [', '"entries": [,') },
+  1, `${AI_CATALOG} is not valid JSON`);
+
+// The truthfulness gate, mechanised: renaming or deleting an advertised file
+// must not leave the manifest pointing at a 404. Both copies are mutated so the
+// byte-equality check stays quiet and the URL check is what fires.
+testFiles('an entry url pointing at a missing file fails closed', (() => {
+  const broken = originalAiCatalog.replace('/api/openapi.json', '/api/nope.json');
+  assert.notStrictEqual(broken, originalAiCatalog, 'fixture assumption broken: no openapi.json url to break');
+  return { [AI_CATALOG]: broken, [ARD]: broken };
+})(), 1, 'references missing file /api/nope.json');
+
+// ARD Section 4.3: exactly one of url or data. Both is ambiguous about which
+// is authoritative; neither is an entry that resolves to nothing.
+for (const [name, mutate, expected] of [
+  ['both url and data', (entry) => ({ ...entry, data: { talks: [] } }), 'has both'],
+  ['neither url nor data', ({ url, ...entry }) => entry, 'has neither'],
+]) {
+  testFiles(`an entry with ${name} fails closed`, (() => {
+    const manifest = JSON.parse(originalAiCatalog);
+    manifest.entries[0] = mutate(manifest.entries[0]);
+    const text = JSON.stringify(manifest, null, 2);
+    return { [AI_CATALOG]: text, [ARD]: text };
+  })(), 1, `entry 1 must have exactly one of url or data (ARD Section 4.3) but ${expected}`);
+}
+
+// The Agentmap URL is checked against the tree for the same reason as the
+// entry urls, and it needs the check more: no crawler, no page and no other
+// invariant would ever report it.
+testFiles('a robots.txt Agentmap pointing at a missing file fails closed',
+  { 'robots.txt': originalRobots.replace(/^Agentmap:.*$/m, 'Agentmap: https://jaredsburrows.com/.well-known/nope.json') },
+  1, 'robots.txt Agentmap references missing file /.well-known/nope.json');
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);
