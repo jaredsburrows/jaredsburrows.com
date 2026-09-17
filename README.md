@@ -28,7 +28,7 @@ npx wrangler dev
 ### Caching
 
 Production TTLs live in `_headers`: CSS/JS cache for an hour, images and icons
-for a week, HTML revalidates on every view — so changes converge on their own,
+for 30 days, HTML revalidates on every view — so changes converge on their own,
 no cache-busting query strings.
 
 ### Add a talk
@@ -47,7 +47,9 @@ magick /tmp/avatar.png -resize 180x180 -strip apple-touch-icon.png
 magick /tmp/avatar.png -resize 460x460 -strip -quality 85 static/image/avatar-460.jpg
 ```
 
-Returning visitors may see the old photo for up to a week (image TTL above).
+Returning visitors may see the old photo for up to 30 days (image TTL above);
+renaming the file — and its references in `index.html` and the `_headers`
+preload — busts the cache immediately if that ever matters.
 
 License
 =======

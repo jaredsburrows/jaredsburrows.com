@@ -10,7 +10,8 @@
 
 # Without these rules everything is served max-age=0 and revalidated on every
 # page view. URLs are unversioned, so code TTLs stay short (changes converge
-# within the hour); images and icons change rarely and can wait a week.
+# within the hour); images and icons change rarely and can wait a month —
+# renaming the file busts it early.
 /static/css/*
   Cache-Control: public, max-age=3600
 
@@ -18,13 +19,13 @@
   Cache-Control: public, max-age=3600
 
 /static/image/*
-  Cache-Control: public, max-age=604800
+  Cache-Control: public, max-age=2592000
 
 /favicon.ico
-  Cache-Control: public, max-age=604800
+  Cache-Control: public, max-age=2592000
 
 /apple-touch-icon.png
-  Cache-Control: public, max-age=604800
+  Cache-Control: public, max-age=2592000
 
 # Homepage-only preload hints: Cloudflare turns these into 103 Early Hints when
 # that zone setting is on, and browsers honor them from the response headers
