@@ -1,9 +1,11 @@
+.claude
 .editorconfig
 .git
 .gitattributes
 .gitignore
 .github
 .idea
+.team
 .wrangler
 node_modules
 CNAME

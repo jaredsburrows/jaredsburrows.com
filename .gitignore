@@ -253,3 +253,6 @@ hs_err_pid*
 
 ### Team Burrows scratch (local planning notes, not part of the site) ###
 .team/
+
+### Claude Code local agent scratch (worktrees, checkpoints, agent state, not part of the site) ###
+.claude/
