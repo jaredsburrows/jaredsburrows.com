@@ -41,6 +41,7 @@ const indexHtml = read('index.html');
 const notFoundHtml = read('404.html');
 const headers = read('_headers');
 const redirects = read('_redirects');
+const robotsTxt = read('robots.txt');
 const homeJs = read('static/js/home.js');
 
 // --- CSP parity: _headers is production, the meta tag is the GH Pages mirror.
@@ -377,6 +378,69 @@ for (const endpoint of Object.keys(openapi?.paths ?? {})) {
   }
 }
 
+// --- ARD capability manifest. Published at two well-known paths because the
+// spec renamed the file between revisions: /.well-known/ard.json is the v0.91
+// primary and /.well-known/ai-catalog.json the predecessor that today's
+// scanners still probe. Same blind spot as the API catalog above, one step
+// worse: no page renders a manifest, nothing at runtime reads one, and the two
+// copies are kept in step by hand — so drift and dead URLs are invisible until
+// an agent fetches a capability this site does not actually serve, which is a
+// worse outcome than publishing no manifest at all.
+const ARD_PATHS = ['.well-known/ai-catalog.json', '.well-known/ard.json'];
+const ardText = new Map();
+for (const name of ARD_PATHS) {
+  try {
+    ardText.set(name, read(name));
+  } catch (error) {
+    bad(`${name} is missing — the ARD manifest is published at both well-known paths (${error.message})`);
+  }
+}
+
+// Byte equality, not deep equality: the two files are a copy, and the whole
+// point of the pair is that an agent gets the same bytes whichever path its
+// spec revision tells it to try.
+const [aiCatalogPath, ardPath] = ARD_PATHS;
+if (ardText.size === ARD_PATHS.length && ardText.get(aiCatalogPath) !== ardText.get(ardPath)) {
+  bad(`${aiCatalogPath} and ${ardPath} are not byte-identical — edit ${aiCatalogPath} and copy it to ${ardPath} in the same commit`);
+}
+
+// Both files are parsed, not just one. Byte equality alone would happily pass a
+// pair that is identically broken.
+for (const name of ARD_PATHS) {
+  if (!ardText.has(name)) continue;
+  const manifest = parseJson(name);
+  if (!manifest) continue;
+  if (!Array.isArray(manifest.entries)) {
+    bad(`${name} has no entries array, so it advertises no capability at all`);
+    continue;
+  }
+  manifest.entries.forEach((entry, index) => {
+    const label = `${name} entry ${index + 1}`;
+    // ARD Section 4.3: an entry either points at a resource or inlines it —
+    // never both (which one is authoritative?) and never neither (an entry
+    // that resolves to nothing).
+    const hasUrl = typeof entry.url === 'string';
+    const hasData = entry.data !== undefined;
+    if (hasUrl === hasData) {
+      bad(`${label} must have exactly one of url or data (ARD Section 4.3) but has ${hasUrl ? 'both' : 'neither'}`);
+    }
+    // Same rule as the catalog hrefs: only same-origin URLs can be checked
+    // against this tree, and only they are ours to keep honest.
+    if (hasUrl && entry.url.startsWith(`${SITE_ORIGIN}/`)) {
+      checkLocal(label, entry.url.slice(SITE_ORIGIN.length));
+    }
+  });
+}
+
+// robots.txt Agentmap: the third route to the same manifest, and the one with
+// no safety net anywhere else. Conforming robots parsers ignore directives they
+// do not recognise, so a typo here costs nothing a crawler would ever report.
+for (const [, reference] of robotsTxt.matchAll(/^[ \t]*Agentmap:[ \t]*(\S+)[ \t]*$/gim)) {
+  if (reference.startsWith(`${SITE_ORIGIN}/`)) {
+    checkLocal('robots.txt Agentmap', reference.slice(SITE_ORIGIN.length));
+  }
+}
+
 // --- /auth.md discovery: agent tooling finds this document by fetching
 // /auth.md and matching an H1 that contains "auth.md". Both the file and the
 // heading are load-bearing, and neither failure is visible anywhere else in
@@ -450,4 +514,4 @@ if (errors.length > 0) {
   for (const message of errors) console.error(`  - ${message}`);
   process.exit(1);
 }
-console.log('✓ site invariants hold (CSP parity + coverage, embed referer, id contract, file references, JSON-LD, auth.md discovery, API catalog, _headers overlap, _redirects syntax)');
+console.log('✓ site invariants hold (CSP parity + coverage, embed referer, id contract, file references, JSON-LD, auth.md discovery, API catalog, ARD manifest, _headers overlap, _redirects syntax)');
