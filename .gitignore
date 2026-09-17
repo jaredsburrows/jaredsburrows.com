@@ -256,3 +256,6 @@ hs_err_pid*
 
 ### Claude Code local agent scratch (worktrees, checkpoints, agent state, not part of the site) ###
 .claude/
+
+### npm (vnu-jar, installed with --no-save by the HTML validator job; not part of the site) ###
+node_modules/
