@@ -1,15 +1,21 @@
 :root {
   color-scheme: light dark;
   --bg: light-dark(#faf9f7, #121211);
-  --surface: light-dark(#f2f0eb, #171715);
-  --surface-2: light-dark(#ebe9e3, #1a1a18);
+  /* Row backgrounds, in increasing order: rest (--bg), hover, active. Text
+     sitting inside a row must clear 4.5:1 on ALL THREE, not just --bg. The
+     tokens below are fitted to the worst case (--surface-2), which is why
+     --faint is darker/lighter than it looks like it needs to be. */
+  --surface: light-dark(#efece5, #1c1c1a);
+  --surface-2: light-dark(#e9e6de, #201f1e);
   --border: light-dark(#e3e0d9, #262521);
   --text: light-dark(#1c1b19, #e8e6e1);
   --text-2: light-dark(#55524b, #a8a59e);
+  /* In a row: 5.87/5.24/4.95 light, 5.22/4.76/4.59 dark. */
   --text-3: light-dark(#64615a, #8a877f);
-  /* Dark values sit just above the 4.5:1 WCAG AA floor on --bg for 13px text. */
+  /* Never inside a row, so --bg is the only background it meets. */
   --text-4: light-dark(#6e6a62, #858279);
-  --faint: light-dark(#757168, #807d75);
+  /* In a row: 5.36/4.78/4.52 light, 5.29/4.82/4.65 dark. */
+  --faint: light-dark(#6b675e, #8b8880);
   --dot: light-dark(#d5d1c9, #3a3934);
   --link: light-dark(#3f3c36, #c9c6bf);
   --link-underline: light-dark(#cfcbc3, #3a3934);
@@ -39,7 +45,9 @@ button:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 44px;
-  min-height: calc(100vh - 144px);
+  /* border-box already counts the 144px of padding above, so subtracting it
+     again made the page shorter than the viewport rather than filling it. */
+  min-height: 100dvh;
   box-sizing: border-box;
 }
 
@@ -76,7 +84,10 @@ h1 {
   font-size: 16px;
   line-height: 1.6;
   color: var(--text-2);
-  max-width: 52ch;
+  /* 63ch lands on the same 556px column as the nav rows and footer below it.
+     52ch stopped at 463px and left the paragraph visibly narrower than
+     everything under it. Still inside the 45-75ch readable range. */
+  max-width: 63ch;
   text-wrap: pretty;
 }
 
@@ -122,6 +133,11 @@ nav a:hover {
   background: var(--surface);
 }
 
+/* Touch has no hover, so without this a tap gives no feedback at all. */
+nav a:active {
+  background: var(--surface-2);
+}
+
 nav .t {
   font-size: 15px;
   font-weight: 600;
@@ -130,6 +146,9 @@ nav .t {
 
 nav .d {
   font-size: 14px;
+  /* Wraps to its own full-width row under 560px; normal (~1.15) is too tight
+     for the two descriptions that run to a second line on a 375px screen. */
+  line-height: 1.45;
   color: var(--text-3);
   text-wrap: pretty;
 }
@@ -145,7 +164,7 @@ nav .ar {
 }
 
 .talks h2 {
-  margin: 0 0 6px;
+  margin: 0 0 8px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.16em;
@@ -164,7 +183,8 @@ nav .ar {
   align-items: baseline;
   width: 100%;
   margin: 0;
-  padding: 13px 0;
+  /* Matches nav a: both are rows in a list, and 13px left this one 43px tall. */
+  padding: 15px 0;
   background: none;
   border: 0;
   font: inherit;
@@ -176,6 +196,10 @@ nav .ar {
 
 .talk-row:hover {
   background: var(--surface);
+}
+
+.talk-row:active {
+  background: var(--surface-2);
 }
 
 .talks .dt {
@@ -259,6 +283,8 @@ nav .ar {
   overflow: hidden;
   background: var(--surface-2);
   text-decoration: none;
+  /* Not a light-dark() token on purpose: the caption always sits on the dark
+     gradient below, so it stays light in both themes. */
   color: #e8e6e1;
 }
 
@@ -295,8 +321,11 @@ footer {
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
 }
 
+/* Was color: inherit, which made the link identical to the text around it and
+   left a 1.5:1 underline as its only affordance. --link matches .meta a and
+   .talk-meta a, so every link on the page is now marked the same way. */
 footer a {
-  color: inherit;
+  color: var(--link);
   text-decoration: none;
   border-bottom: 1px solid var(--link-underline);
 }
