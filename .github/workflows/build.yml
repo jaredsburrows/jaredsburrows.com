@@ -6,6 +6,9 @@ on:
       - gh-pages
   pull_request:
     types: [ opened, labeled, unlabeled, synchronize ]
+  # Manual escape hatch. The checks run first here too, so a dispatched deploy
+  # is gated exactly like a pushed one; only the trigger differs.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -59,3 +62,32 @@ jobs:
       # without ever exposing the Cloudflare token to PR-triggered runs.
       - name: Validate Cloudflare config (dry run)
         run: npx --yes wrangler deploy --dry-run
+
+  # Lives here, rather than in its own workflow, so `needs` can gate it. As a
+  # separate workflow triggered on push it raced the checks instead of waiting
+  # for them, and nothing stopped a red commit from reaching production.
+  deploy:
+    name: Deploy to Cloudflare
+    needs: checks
+    # Never from a pull_request event: a PR must not reach production, and the
+    # Cloudflare token is not exposed to PR-triggered runs.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/gh-pages'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    # Serialize deploys: rapid gh-pages pushes queue instead of racing, and an
+    # in-flight production upload is never cancelled. Job-level, so it holds
+    # across runs without serializing the checks job too.
+    concurrency:
+      group: cloudflare-deploy
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          command: deploy
