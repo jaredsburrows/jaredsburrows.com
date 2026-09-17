@@ -91,6 +91,20 @@
         }
       }
     </script>
+    <!-- Site name only, so search results can show "Jared Burrows" instead of
+         the bare domain; name matches og:site_name below and url matches the
+         canonical. Deliberately no potentialAction/SearchAction — Google
+         deprecated the Sitelinks Searchbox in Oct 2024 and removed it in Nov
+         2024, and this site has no search endpoint to point one at. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "Jared Burrows",
+        "alternateName": "jaredsburrows",
+        "url": "https://jaredsburrows.com/"
+      }
+    </script>
     <!-- End Schema Meta Data -->
 
     <!-- OpenGraph Meta - https://ogp.me/ -->
