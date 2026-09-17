@@ -62,33 +62,33 @@
     <script src="static/js/home.js" defer></script>
 
     <!-- Schema Meta Data - https://Schema.org/ -->
-    <!-- ProfilePage wrapping the Person: this page IS the profile, which is the
-         shape Google documents for profile pages. No worksFor or alumniOf — the
-         bio names companies products were built FOR, not a current employer,
-         and no school is recorded anywhere in this repo; every field here has
-         to be sourceable from the site itself. -->
+    <!-- Top-level Person. ProfilePage was considered and rejected on
+         eligibility: Google scopes it to forum/social profiles, news author
+         pages, blog "About Me" pages and company employee pages, and calls a
+         home page carrying "lots of non-profile info" invalid — this one is
+         half bio, half talks list. No worksFor or alumniOf — the bio names
+         companies products were built FOR, not a current employer, and no
+         school is recorded anywhere in this repo; every field here has to be
+         sourceable from the site itself. -->
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
-        "@type": "ProfilePage",
-        "mainEntity": {
-          "@type": "Person",
-          "name": "Jared Burrows",
-          "url": "https://jaredsburrows.com/",
-          "image": "https://jaredsburrows.com/static/image/avatar-460.jpg",
-          "jobTitle": "Software Engineer",
-          "description": "Software engineer specializing in Android and Kotlin. Open-source maintainer (gradle-license-plugin) and conference speaker.",
-          "knowsAbout": ["Android", "Kotlin", "Java", "Gradle"],
-          "sameAs": [
-            "https://blog.jaredsburrows.com",
-            "https://www.burrowsapps.com",
-            "https://github.com/jaredsburrows",
-            "https://x.com/jaredsburrows",
-            "https://www.linkedin.com/in/jaredsburrows",
-            "https://stackoverflow.com/users/950427/jared-burrows",
-            "https://speakerdeck.com/jaredsburrows"
-          ]
-        }
+        "@type": "Person",
+        "name": "Jared Burrows",
+        "url": "https://jaredsburrows.com/",
+        "image": "https://jaredsburrows.com/static/image/avatar-460.jpg",
+        "jobTitle": "Software Engineer",
+        "description": "Software engineer specializing in Android and Kotlin. Open-source maintainer (gradle-license-plugin) and conference speaker.",
+        "knowsAbout": ["Android", "Kotlin", "Java", "Gradle"],
+        "sameAs": [
+          "https://blog.jaredsburrows.com",
+          "https://www.burrowsapps.com",
+          "https://github.com/jaredsburrows",
+          "https://x.com/jaredsburrows",
+          "https://www.linkedin.com/in/jaredsburrows",
+          "https://stackoverflow.com/users/950427/jared-burrows",
+          "https://speakerdeck.com/jaredsburrows"
+        ]
       }
     </script>
     <!-- Site name only, so search results can show "Jared Burrows" instead of
