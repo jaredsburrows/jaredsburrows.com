@@ -466,6 +466,150 @@ testFiles('an off-origin og:image is not treated as a local file', {
   'index.html': originalIndexHtml.replace(
     /(property="og:image" content=)"[^"]+"/, '$1"https://example.com/avatar.jpg"'),
 }, 0);
+// --- ARD capability manifest. Two hand-maintained copies of one document at
+// two well-known paths, plus a robots.txt pointer and two head link tags. None
+// of it renders, nothing at runtime reads it, and a conforming robots parser
+// ignores the directive it does not know — so every failure mode below is
+// silent in a browser and only shows up as an agent fetching a capability that
+// is not there, which is worse than publishing nothing.
+const AI_CATALOG = '.well-known/ai-catalog.json';
+const ARD = '.well-known/ard.json';
+const originalAiCatalog = fs.readFileSync(path.join(repoRoot, AI_CATALOG), 'utf8');
+const originalRobots = fs.readFileSync(path.join(repoRoot, 'robots.txt'), 'utf8');
+assert.strictEqual(originalAiCatalog, fs.readFileSync(path.join(repoRoot, ARD), 'utf8'),
+  `fixture assumption broken: ${AI_CATALOG} and ${ARD} are no longer byte-identical`);
+assert.ok(originalAiCatalog.includes('https://jaredsburrows.com/api/openapi.json'),
+  `fixture assumption broken: ${AI_CATALOG} no longer advertises api/openapi.json`);
+assert.ok(/^Agentmap:\s*\S+$/m.test(originalRobots),
+  'fixture assumption broken: robots.txt no longer has an Agentmap directive');
+
+// Edit one copy to valid-but-different and the pair silently disagrees about
+// what this origin offers, depending on which path the agent's spec revision
+// told it to fetch. One character is enough to prove the check is byte-exact
+// rather than structural.
+testFiles('a one-character drift between the two manifest copies fails closed',
+  { [ARD]: originalAiCatalog.replace('"Talks dataset"', '"Talks Dataset"') },
+  1, 'are not byte-identical');
+
+// A manifest that does not parse is worse than no manifest: the well-known
+// path answers 200, so a client stops looking for one.
+testFiles('a manifest that is not valid JSON fails closed',
+  { [AI_CATALOG]: originalAiCatalog.replace('"entries": [', '"entries": [,') },
+  1, `${AI_CATALOG} is not valid JSON`);
+
+// One well-known path missing entirely (not just malformed) is its own
+// failure mode — the read() call throws before JSON.parse ever runs — and
+// nothing above exercises it.
+testFiles('one manifest copy missing entirely fails closed',
+  { [ARD]: null },
+  1, `${ARD} is missing — the ARD manifest is published at both well-known paths`);
+
+// The truthfulness gate, mechanised: renaming or deleting an advertised file
+// must not leave the manifest pointing at a 404. Both copies are mutated so the
+// byte-equality check stays quiet and the URL check is what fires.
+testFiles('an entry url pointing at a missing file fails closed', (() => {
+  const broken = originalAiCatalog.replace('/api/openapi.json', '/api/nope.json');
+  assert.notStrictEqual(broken, originalAiCatalog, 'fixture assumption broken: no openapi.json url to break');
+  return { [AI_CATALOG]: broken, [ARD]: broken };
+})(), 1, 'references missing file /api/nope.json');
+
+// ARD Section 4.3: exactly one of url or data. Both is ambiguous about which
+// is authoritative; neither is an entry that resolves to nothing.
+for (const [name, mutate, expected] of [
+  ['both url and data', (entry) => ({ ...entry, data: { talks: [] } }), 'has both'],
+  ['neither url nor data', ({ url, ...entry }) => entry, 'has neither'],
+]) {
+  testFiles(`an entry with ${name} fails closed`, (() => {
+    const manifest = JSON.parse(originalAiCatalog);
+    manifest.entries[0] = mutate(manifest.entries[0]);
+    const text = JSON.stringify(manifest, null, 2);
+    return { [AI_CATALOG]: text, [ARD]: text };
+  })(), 1, `entry 1 must have exactly one of url or data (ARD Section 4.3) but ${expected}`);
+}
+
+// The Agentmap URL is checked against the tree for the same reason as the
+// entry urls, and it needs the check more: no crawler, no page and no other
+// invariant would ever report it.
+testFiles('a robots.txt Agentmap pointing at a missing file fails closed',
+  { 'robots.txt': originalRobots.replace(/^Agentmap:.*$/m, 'Agentmap: https://jaredsburrows.com/.well-known/nope.json') },
+  1, 'robots.txt Agentmap references missing file /.well-known/nope.json');
+
+// --- S12: every same-origin URL check must fail CLOSED on a path that escapes
+// the repo. The unfixed checkLocal sliced off the query/fragment, stripped ONE
+// leading slash and called path.join(root, …) with no normalization and no
+// containment check, so a url with enough `..` segments to clamp at the
+// filesystem root landed on a real file outside the tree, fs.existsSync
+// returned true and the truthfulness gate stayed silent — green-lighting a
+// manifest whose url every real client normalizes to
+// https://jaredsburrows.com/etc/hosts, a 404 in production.
+//
+// The traversal is deliberately deeper than any plausible tree: `path.join`
+// clamps at `/`, so the escape target does not depend on how deep the scratch
+// directory happens to sit (four segments is enough from the repo root but not
+// from a macOS `/var/folders/...` temp dir, which would make the test pass for
+// the wrong reason).
+const ESCAPE_TARGET = '/etc/hosts';
+const TRAVERSAL = `/${'../'.repeat(10)}${ESCAPE_TARGET.slice(1)}`;
+const ENCODED_TRAVERSAL = `/${'%2e%2e%2f'.repeat(10)}${ESCAPE_TARGET.slice(1)}`;
+assert.ok(fs.existsSync(ESCAPE_TARGET),
+  `fixture assumption broken: ${ESCAPE_TARGET} does not exist, so the traversal cases cannot prove an escape`);
+assert.strictEqual(path.join('/deep/scratch/dir', TRAVERSAL.replace(/^\//, '')), ESCAPE_TARGET,
+  'fixture assumption broken: the traversal no longer reaches outside the tree the way the unfixed check resolved it');
+
+const withManifestUrl = (url) => {
+  const manifest = JSON.parse(originalAiCatalog);
+  manifest.entries[0].url = url;
+  const text = JSON.stringify(manifest, null, 2);
+  return { [AI_CATALOG]: text, [ARD]: text };
+};
+
+// Raw `..` segments: the URL parser collapses them exactly as a browser does,
+// so the entry is judged as /etc/hosts on this origin — a path this tree does
+// not contain. Exit 0 before the fix, exit 1 after.
+testFiles('a manifest entry url with a ../ traversal out of the repo fails closed',
+  withManifestUrl(`${'https://jaredsburrows.com'}${TRAVERSAL}`),
+  1, `references missing file ${TRAVERSAL}`);
+
+// Percent-encoded traversal: `%2e%2e%2f…` is one opaque segment to the URL
+// parser, so only decoding exposes the `../`, which is why containment is
+// checked after the decode and not before. This one already exited non-zero
+// before the fix, but for the wrong reason (the unfixed check never decoded,
+// so it looked for a file literally named `%2e%2e%2f…`); the message assertion
+// is what pins it to the containment guard.
+testFiles('a manifest entry url with a percent-encoded traversal fails closed',
+  withManifestUrl(`${'https://jaredsburrows.com'}${ENCODED_TRAVERSAL}`),
+  1, 'escapes the site root');
+
+// The Agentmap directive reaches the same helper, so the single fix covers it …
+testFiles('a robots.txt Agentmap with a ../ traversal out of the repo fails closed',
+  { 'robots.txt': originalRobots.replace(/^Agentmap:.*$/m, `Agentmap: https://jaredsburrows.com${TRAVERSAL}`) },
+  1, `robots.txt Agentmap references missing file ${TRAVERSAL}`);
+
+// … and so does the pre-existing api-catalog href caller, which had the same
+// defect and is closed by the same change instead of a per-call-site guard.
+testFiles('an api-catalog href with a ../ traversal out of the repo fails closed',
+  {
+    '.well-known/api-catalog': fs.readFileSync(path.join(repoRoot, '.well-known/api-catalog'), 'utf8')
+      .replace('https://jaredsburrows.com/api/openapi.json', `https://jaredsburrows.com${TRAVERSAL}`),
+  },
+  1, `.well-known/api-catalog entry 1 references missing file ${TRAVERSAL}`);
+
+// The same-origin walk added for S11 is a second family of callers — the
+// widened content="" attribute walk and the recursive JSON-LD walk both hand
+// sameOriginPath's output to checkLocal, so containment has to hold on that
+// route too. It does, because the guard lives in checkLocal rather than at any
+// call site: sameOriginPath strips the origin, checkLocal resolves what is
+// left against the same origin again, and the `..` collapses either way.
+testFiles('a JSON-LD same-origin URL with a ../ traversal out of the repo fails closed', {
+  'index.html': mutateJsonLd((body) =>
+    body.replace(/("image"\s*:\s*"https:\/\/jaredsburrows\.com)\/[^"]+"/, `$1${TRAVERSAL}"`)),
+}, 1, `index.html JSON-LD block 1 references missing file ${TRAVERSAL}`);
+
+testFiles('an og:image with a ../ traversal out of the repo fails closed', {
+  'index.html': originalIndexHtml.replace(
+    /(property="og:image" content="https:\/\/jaredsburrows\.com)\/[^"]+"/,
+    `$1${TRAVERSAL}"`),
+}, 1, `index.html references missing file ${TRAVERSAL}`);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

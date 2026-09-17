@@ -41,6 +41,7 @@ const indexHtml = read('index.html');
 const notFoundHtml = read('404.html');
 const headers = read('_headers');
 const redirects = read('_redirects');
+const robotsTxt = read('robots.txt');
 const homeJs = read('static/js/home.js');
 
 // --- CSP parity: _headers is production, the meta tag is the GH Pages mirror.
@@ -206,10 +207,46 @@ for (const [, id] of homeJs.matchAll(/getElementById\('([^']+)'\)/g)) {
   }
 }
 
+// Declared here rather than beside sameOriginPath below because checkLocal
+// resolves against it too, and everything under it is a caller.
+const SITE_ORIGIN = 'https://jaredsburrows.com';
+
 // --- Referenced local files must exist (pages plus _headers preloads).
+// Each reference is resolved the way a client resolves it — through the URL
+// parser, against the site origin — so `..` segments collapse before the path
+// is used, and the normalized path must then land inside this tree. Both steps
+// are load-bearing (S12): slicing the origin off and stripping one leading
+// slash let a `..` walk out of the repo, and `fs.existsSync` happily confirmed
+// a file the site does not serve. Every real client normalizes
+// https://jaredsburrows.com/../../etc/hosts to /etc/hosts on this origin and
+// gets a 404, so a check that passes it is a gate that fails open.
 const checkLocal = (source, reference) => {
-  const clean = reference.replace(/[?#].*$/, '').replace(/^\//, '');
-  if (!fs.existsSync(path.join(root, clean))) {
+  let url;
+  try {
+    url = new URL(reference, `${SITE_ORIGIN}/`);
+  } catch {
+    bad(`${source} references ${reference}, which is not a URL any client can resolve`);
+    return;
+  }
+  if (url.origin !== SITE_ORIGIN) {
+    bad(`${source} references ${reference}, which resolves to ${url.origin} — this site can only serve its own origin`);
+    return;
+  }
+  // Decode before the containment check, not after: `%2e%2e%2f` is one opaque
+  // segment to the URL parser and only becomes `../` here.
+  let pathname;
+  try {
+    pathname = decodeURIComponent(url.pathname);
+  } catch {
+    bad(`${source} references ${reference}, whose path is not valid percent-encoding`);
+    return;
+  }
+  const target = path.resolve(root, `.${pathname}`);
+  if (target !== root && !target.startsWith(root + path.sep)) {
+    bad(`${source} references ${reference}, which escapes the site root — no client can fetch a path outside this origin`);
+    return;
+  }
+  if (!fs.existsSync(target)) {
     bad(`${source} references missing file ${reference}`);
   }
 };
@@ -220,7 +257,6 @@ const checkLocal = (source, reference) => {
 // (.team/SECURITY.md S11). With image TTLs at 30 days and Cloudflare purge
 // unable to reach a browser cache, the rename IS the cache-bust — so every
 // reference to a renamed asset has to move in the same commit.
-const SITE_ORIGIN = 'https://jaredsburrows.com';
 const sameOriginPath = (reference) =>
   (reference.startsWith(`${SITE_ORIGIN}/`) ? reference.slice(SITE_ORIGIN.length) : undefined);
 // Walks parsed data (JSON-LD, any object or array) for the same absolute URLs.
@@ -377,6 +413,69 @@ for (const endpoint of Object.keys(openapi?.paths ?? {})) {
   }
 }
 
+// --- ARD capability manifest. Published at two well-known paths because the
+// spec renamed the file between revisions: /.well-known/ard.json is the v0.91
+// primary and /.well-known/ai-catalog.json the predecessor that today's
+// scanners still probe. Same blind spot as the API catalog above, one step
+// worse: no page renders a manifest, nothing at runtime reads one, and the two
+// copies are kept in step by hand — so drift and dead URLs are invisible until
+// an agent fetches a capability this site does not actually serve, which is a
+// worse outcome than publishing no manifest at all.
+const ARD_PATHS = ['.well-known/ai-catalog.json', '.well-known/ard.json'];
+const ardText = new Map();
+for (const name of ARD_PATHS) {
+  try {
+    ardText.set(name, read(name));
+  } catch (error) {
+    bad(`${name} is missing — the ARD manifest is published at both well-known paths (${error.message})`);
+  }
+}
+
+// Byte equality, not deep equality: the two files are a copy, and the whole
+// point of the pair is that an agent gets the same bytes whichever path its
+// spec revision tells it to try.
+const [aiCatalogPath, ardPath] = ARD_PATHS;
+if (ardText.size === ARD_PATHS.length && ardText.get(aiCatalogPath) !== ardText.get(ardPath)) {
+  bad(`${aiCatalogPath} and ${ardPath} are not byte-identical — edit ${aiCatalogPath} and copy it to ${ardPath} in the same commit`);
+}
+
+// Both files are parsed, not just one. Byte equality alone would happily pass a
+// pair that is identically broken.
+for (const name of ARD_PATHS) {
+  if (!ardText.has(name)) continue;
+  const manifest = parseJson(name);
+  if (!manifest) continue;
+  if (!Array.isArray(manifest.entries)) {
+    bad(`${name} has no entries array, so it advertises no capability at all`);
+    continue;
+  }
+  manifest.entries.forEach((entry, index) => {
+    const label = `${name} entry ${index + 1}`;
+    // ARD Section 4.3: an entry either points at a resource or inlines it —
+    // never both (which one is authoritative?) and never neither (an entry
+    // that resolves to nothing).
+    const hasUrl = typeof entry.url === 'string';
+    const hasData = entry.data !== undefined;
+    if (hasUrl === hasData) {
+      bad(`${label} must have exactly one of url or data (ARD Section 4.3) but has ${hasUrl ? 'both' : 'neither'}`);
+    }
+    // Same rule as the catalog hrefs: only same-origin URLs can be checked
+    // against this tree, and only they are ours to keep honest.
+    if (hasUrl && entry.url.startsWith(`${SITE_ORIGIN}/`)) {
+      checkLocal(label, entry.url.slice(SITE_ORIGIN.length));
+    }
+  });
+}
+
+// robots.txt Agentmap: the third route to the same manifest, and the one with
+// no safety net anywhere else. Conforming robots parsers ignore directives they
+// do not recognise, so a typo here costs nothing a crawler would ever report.
+for (const [, reference] of robotsTxt.matchAll(/^[ \t]*Agentmap:[ \t]*(\S+)[ \t]*$/gim)) {
+  if (reference.startsWith(`${SITE_ORIGIN}/`)) {
+    checkLocal('robots.txt Agentmap', reference.slice(SITE_ORIGIN.length));
+  }
+}
+
 // --- /auth.md discovery: agent tooling finds this document by fetching
 // /auth.md and matching an H1 that contains "auth.md". Both the file and the
 // heading are load-bearing, and neither failure is visible anywhere else in
@@ -450,4 +549,4 @@ if (errors.length > 0) {
   for (const message of errors) console.error(`  - ${message}`);
   process.exit(1);
 }
-console.log('✓ site invariants hold (CSP parity + coverage, embed referer, id contract, file references, JSON-LD, auth.md discovery, API catalog, _headers overlap, _redirects syntax)');
+console.log('✓ site invariants hold (CSP parity + coverage, embed referer, id contract, file references, JSON-LD, auth.md discovery, API catalog, ARD manifest, _headers overlap, _redirects syntax)');
