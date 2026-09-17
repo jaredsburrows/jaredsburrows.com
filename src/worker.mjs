@@ -9,7 +9,11 @@
 //
 // `parseAccept`, `exactQuality`, `effectiveQuality`, `wantsMarkdown` and
 // `varyWithAccept` are ported from jaredsburrows/burrows.tools#279
-// (`src/lib/markdown-negotiation.ts`), keeping its semantics and its reasoning.
+// (`src/lib/markdown-negotiation.ts`), keeping its semantics and its reasoning
+// — with one deliberate divergence: `exactQuality` refuses a media type named
+// twice with disagreeing q-values instead of taking whichever came first, which
+// made the answer depend on header order (BUGS.md B2). #279 still has the
+// `find()` version and wants the same fix.
 // They are JSDoc-annotated JavaScript rather than TypeScript on purpose: this
 // repo has no package.json, no tsconfig.json and no lockfile, so a .ts file
 // would be bundled by Wrangler but type-checked by nothing.
