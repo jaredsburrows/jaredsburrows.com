@@ -54,6 +54,12 @@
          Link header _headers sets on / — an agent that only parses HTML finds
          the catalog too. -->
     <link rel="api-catalog" href="/.well-known/api-catalog">
+    <!-- ARD capability manifest, for agents that read the markup instead of
+         probing /.well-known. Each relation points at its own spec's file:
+         `ard` is the v0.91 primary, `ai-catalog` the predecessor path the
+         current scanner probes. Both files are byte-identical. -->
+    <link rel="ard" href="/.well-known/ard.json">
+    <link rel="ai-catalog" href="/.well-known/ai-catalog.json">
     <meta name="theme-color" content="#121211" media="(prefers-color-scheme: dark)">
     <meta name="theme-color" content="#faf9f7" media="(prefers-color-scheme: light)">
     <!-- Deferred: fetched in parallel with the page, run in order after parse
