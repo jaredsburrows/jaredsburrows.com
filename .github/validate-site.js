@@ -11,6 +11,7 @@
 // - an embed iframe built without an explicit referrerpolicy, which broke
 //   both YouTube talks with Error 153 in September 2026
 // - a page or _headers preload referencing a local file that doesn't exist
+// - /auth.md losing the H1 that agent discovery matches on
 // - two _headers rules setting the same header on overlapping paths
 //   (values from all matching rules comma-join into one broken header)
 // Usage: node .github/validate-site.js [site root]
@@ -210,6 +211,33 @@ for (const [, reference] of headers.matchAll(/Link:\s*<([^>]+)>/g)) {
   checkLocal('_headers Link preload', reference);
 }
 
+// --- /auth.md discovery: agent tooling finds this document by fetching
+// /auth.md and matching an H1 that contains "auth.md". Both the file and the
+// heading are load-bearing, and neither failure is visible anywhere else in
+// the build: the file is not linked from any page (so the file-reference check
+// above never sees it) and Markdown has no schema, so a retitled heading —
+// "# Authentication" reads perfectly well to a human — silently breaks
+// discovery against a green build.
+//
+// Only ATX (`#`) headings count, deliberately. A setext heading ("auth.md"
+// over "======") is a valid Markdown H1 that scanners looking for a literal
+// `#` will still miss, so accepting it here would pass files that fail in
+// production. This check stays at least as strict as the consumer.
+const authMdPath = path.join(root, 'auth.md');
+if (!fs.existsSync(authMdPath)) {
+  bad('auth.md is missing — /auth.md is the discovery document agents fetch for this origin');
+} else {
+  // Fenced blocks first: a `# auth.md` inside a shell example is a comment,
+  // not a heading, and must not satisfy the requirement.
+  const authMd = fs.readFileSync(authMdPath, 'utf8').replace(/^```[\s\S]*?^```/gm, '');
+  const h1s = [...authMd.matchAll(/^#[ \t]+(.*)$/gm)].map(([, text]) => text.trim());
+  if (!h1s.some((text) => text.toLowerCase().includes('auth.md'))) {
+    bad(h1s.length === 0
+      ? 'auth.md has no H1 heading containing "auth.md" (found no ATX H1 at all) — agents locate the document by that heading'
+      : `auth.md has no H1 heading containing "auth.md" — found [${h1s.join(', ')}]`);
+  }
+}
+
 // --- _headers: the same header set by two rules that can match one path
 // comma-joins into a single broken value. Overlap heuristic: a glob's
 // "sample" is the glob with * removed; two patterns overlap when either
@@ -256,4 +284,4 @@ if (errors.length > 0) {
   for (const message of errors) console.error(`  - ${message}`);
   process.exit(1);
 }
-console.log('✓ site invariants hold (CSP parity + coverage, embed referer, id contract, file references, _headers overlap, _redirects syntax)');
+console.log('✓ site invariants hold (CSP parity + coverage, embed referer, id contract, file references, auth.md discovery, _headers overlap, _redirects syntax)');
