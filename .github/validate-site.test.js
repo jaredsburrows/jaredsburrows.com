@@ -594,5 +594,25 @@ testFiles('an api-catalog href with a ../ traversal out of the repo fails closed
   },
   1, `.well-known/api-catalog entry 1 references missing file ${TRAVERSAL}`);
 
+// The absolute same-origin reference walk (og:image, twitter:image) and the
+// JSON-LD walk hand their URLs to the same sameOriginPath + checkLocal pair, so
+// containment has to bite there too. They are the newest paths from a published
+// string to the filesystem and the ones a reader is most likely to assume are
+// guarded somewhere else, so both are proved here rather than reasoned about.
+testFiles('an og:image with a ../ traversal out of the repo fails closed', {
+  'index.html': originalIndexHtml.replace(
+    /(property="og:image" content="https:\/\/jaredsburrows\.com)\/[^"]+"/,
+    `$1${TRAVERSAL}"`),
+}, 1, `index.html references missing file ${TRAVERSAL}`);
+
+// Percent-encoded, inside the JSON-LD block: decoding before the containment
+// check is what catches this one, and the walk through parsed JSON is a
+// separate code path from the attribute walk above.
+testFiles('a JSON-LD image with a percent-encoded traversal fails closed', {
+  'index.html': mutateJsonLd((body) =>
+    body.replace(/("image"\s*:\s*"https:\/\/jaredsburrows\.com)\/[^"]+"/,
+      `$1${ENCODED_TRAVERSAL}"`)),
+}, 1, 'escapes the site root');
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);
