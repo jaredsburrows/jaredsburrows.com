@@ -4,6 +4,8 @@
 // - the _headers CSP and its index.html meta mirror drifting apart
 // - the CSP missing a host the page really loads from (talk embeds were
 //   blocked in production for a month this way)
+// - the CSP missing an origin Cloudflare injects at the edge rather than one
+//   the markup loads, which blocked the Web Analytics beacon (September 2026)
 // - home.js targeting an id index.html no longer has (emptied the live
 //   Presentations section in July 2026)
 // - an embed iframe built without an explicit referrerpolicy, which broke
@@ -132,6 +134,23 @@ if (loadsTag) {
   for (const [origin, why] of measurementEndpoints) {
     requireCsp('connect-src', origin, why);
   }
+}
+
+// --- Edge-injected CSP coverage: Cloudflare injects its Web Analytics RUM
+// beacon into every proxied HTML response. That tag is added after these files
+// leave the build, so index.html contains no reference to it and none of the
+// markup loops above can infer it — yet the script-src violation is real and
+// fired on every page view until listed (PageSpeed console, September 2026).
+// Unlike the measurement endpoints there is no in-repo signal to gate on: the
+// injection is a zone setting, not a file. So if Web Analytics is ever turned
+// off for the zone, delete this block and both sources with it rather than
+// leaving origins trusted for script execution that nothing loads any more.
+const edgeInjectedOrigins = [
+  ['script-src', 'https://static.cloudflareinsights.com', 'Cloudflare injects beacon.min.js into proxied HTML'],
+  ['connect-src', 'https://cloudflareinsights.com', 'the beacon posts RUM samples to its /cdn-cgi/rum'],
+];
+for (const [directive, origin, why] of edgeInjectedOrigins) {
+  requireCsp(directive, origin, why);
 }
 
 // --- Embed referer: the talk iframes are cross-origin, and YouTube's player

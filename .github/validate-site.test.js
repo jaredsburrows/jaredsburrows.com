@@ -47,7 +47,13 @@ const MEASUREMENT_SOURCES = [
   'https://stats.g.doubleclick.net',
   'https://www.google.com',
 ];
-for (const source of MEASUREMENT_SOURCES) {
+// The edge-injected Cloudflare beacon origins. Same shape as above, but these
+// back an unconditional requirement: nothing in the markup implies them.
+const EDGE_INJECTED_SOURCES = [
+  'https://static.cloudflareinsights.com',
+  'https://cloudflareinsights.com',
+];
+for (const source of [...MEASUREMENT_SOURCES, ...EDGE_INJECTED_SOURCES]) {
   for (const [name, content] of [['_headers', originalHeaders], ['index.html', originalIndexHtml]]) {
     assert.ok(content.includes(` ${source} `),
       `fixture assumption broken: ${name} no longer lists ${source} in its CSP`);
@@ -239,6 +245,35 @@ for (const lookalike of [
     return { ...dropped, 'index.html': html };
   })(), 0);
 }
+
+// --- Edge-injected CSP coverage: Cloudflare adds the Web Analytics beacon to
+// the HTML at the edge, so index.html never mentions it and only an explicit
+// list catches a missing source. Blocked in production until listed
+// (PageSpeed console, September 2026).
+for (const [source, directive] of [
+  ['https://static.cloudflareinsights.com', 'script-src'],
+  ['https://cloudflareinsights.com', 'connect-src'],
+]) {
+  testFiles(`dropping ${source} from ${directive} fails closed`,
+    dropSources([source]), 1, `${directive} does not allow ${source}`);
+}
+
+// The two origins are distinct hosts, not one covering the other: dropping the
+// apex must not be masked by `static.` still being listed, and neither is a
+// `*.` wildcard that could swallow the other.
+testFiles('static.cloudflareinsights.com does not satisfy the apex connect-src requirement',
+  dropSources(['https://cloudflareinsights.com']), 1,
+  'connect-src does not allow https://cloudflareinsights.com');
+
+// Unlike the measurement hosts this requirement is ungated on purpose — the
+// injection is a Cloudflare zone setting with no in-repo signal — so removing
+// the tag loads must NOT drop it the way it drops the measurement list.
+testFiles('the beacon requirement survives removing the gtag/gtm loads', (() => {
+  const neutralize = (content) =>
+    content.replace(/googletagmanager\.com\/(?:gtag\/js|gtm\.js)/g, 'googletagmanager.com/ns.html');
+  const dropped = dropSources(EDGE_INJECTED_SOURCES);
+  return { ...dropped, 'index.html': neutralize(dropped['index.html']) };
+})(), 1, 'script-src does not allow https://static.cloudflareinsights.com');
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);
