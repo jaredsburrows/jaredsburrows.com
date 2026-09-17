@@ -207,10 +207,44 @@ for (const [, id] of homeJs.matchAll(/getElementById\('([^']+)'\)/g)) {
   }
 }
 
+const SITE_ORIGIN = 'https://jaredsburrows.com';
+
 // --- Referenced local files must exist (pages plus _headers preloads).
+// Each reference is resolved the way a client resolves it — through the URL
+// parser, against the site origin — so `..` segments collapse before the path
+// is used, and the normalized path must then land inside this tree. Both steps
+// are load-bearing (S12): slicing the origin off and stripping one leading
+// slash let a `..` walk out of the repo, and `fs.existsSync` happily confirmed
+// a file the site does not serve. Every real client normalizes
+// https://jaredsburrows.com/../../etc/hosts to /etc/hosts on this origin and
+// gets a 404, so a check that passes it is a gate that fails open.
 const checkLocal = (source, reference) => {
-  const clean = reference.replace(/[?#].*$/, '').replace(/^\//, '');
-  if (!fs.existsSync(path.join(root, clean))) {
+  let url;
+  try {
+    url = new URL(reference, `${SITE_ORIGIN}/`);
+  } catch {
+    bad(`${source} references ${reference}, which is not a URL any client can resolve`);
+    return;
+  }
+  if (url.origin !== SITE_ORIGIN) {
+    bad(`${source} references ${reference}, which resolves to ${url.origin} — this site can only serve its own origin`);
+    return;
+  }
+  // Decode before the containment check, not after: `%2e%2e%2f` is one opaque
+  // segment to the URL parser and only becomes `../` here.
+  let pathname;
+  try {
+    pathname = decodeURIComponent(url.pathname);
+  } catch {
+    bad(`${source} references ${reference}, whose path is not valid percent-encoding`);
+    return;
+  }
+  const target = path.resolve(root, `.${pathname}`);
+  if (target !== root && !target.startsWith(root + path.sep)) {
+    bad(`${source} references ${reference}, which escapes the site root — no client can fetch a path outside this origin`);
+    return;
+  }
+  if (!fs.existsSync(target)) {
     bad(`${source} references missing file ${reference}`);
   }
 };
@@ -221,7 +255,6 @@ const checkLocal = (source, reference) => {
 // (.team/SECURITY.md S11). With image TTLs at 30 days and Cloudflare purge
 // unable to reach a browser cache, the rename IS the cache-bust — so every
 // reference to a renamed asset has to move in the same commit.
-const SITE_ORIGIN = 'https://jaredsburrows.com';
 const sameOriginPath = (reference) =>
   (reference.startsWith(`${SITE_ORIGIN}/`) ? reference.slice(SITE_ORIGIN.length) : undefined);
 // Walks parsed data (JSON-LD, any object or array) for the same absolute URLs.

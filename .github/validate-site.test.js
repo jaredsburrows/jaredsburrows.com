@@ -534,5 +534,65 @@ testFiles('a robots.txt Agentmap pointing at a missing file fails closed',
   { 'robots.txt': originalRobots.replace(/^Agentmap:.*$/m, 'Agentmap: https://jaredsburrows.com/.well-known/nope.json') },
   1, 'robots.txt Agentmap references missing file /.well-known/nope.json');
 
+// --- S12: every same-origin URL check must fail CLOSED on a path that escapes
+// the repo. The unfixed checkLocal sliced off the query/fragment, stripped ONE
+// leading slash and called path.join(root, …) with no normalization and no
+// containment check, so a url with enough `..` segments to clamp at the
+// filesystem root landed on a real file outside the tree, fs.existsSync
+// returned true and the truthfulness gate stayed silent — green-lighting a
+// manifest whose url every real client normalizes to
+// https://jaredsburrows.com/etc/hosts, a 404 in production.
+//
+// The traversal is deliberately deeper than any plausible tree: `path.join`
+// clamps at `/`, so the escape target does not depend on how deep the scratch
+// directory happens to sit (four segments is enough from the repo root but not
+// from a macOS `/var/folders/...` temp dir, which would make the test pass for
+// the wrong reason).
+const ESCAPE_TARGET = '/etc/hosts';
+const TRAVERSAL = `/${'../'.repeat(10)}${ESCAPE_TARGET.slice(1)}`;
+const ENCODED_TRAVERSAL = `/${'%2e%2e%2f'.repeat(10)}${ESCAPE_TARGET.slice(1)}`;
+assert.ok(fs.existsSync(ESCAPE_TARGET),
+  `fixture assumption broken: ${ESCAPE_TARGET} does not exist, so the traversal cases cannot prove an escape`);
+assert.strictEqual(path.join('/deep/scratch/dir', TRAVERSAL.replace(/^\//, '')), ESCAPE_TARGET,
+  'fixture assumption broken: the traversal no longer reaches outside the tree the way the unfixed check resolved it');
+
+const withManifestUrl = (url) => {
+  const manifest = JSON.parse(originalAiCatalog);
+  manifest.entries[0].url = url;
+  const text = JSON.stringify(manifest, null, 2);
+  return { [AI_CATALOG]: text, [ARD]: text };
+};
+
+// Raw `..` segments: the URL parser collapses them exactly as a browser does,
+// so the entry is judged as /etc/hosts on this origin — a path this tree does
+// not contain. Exit 0 before the fix, exit 1 after.
+testFiles('a manifest entry url with a ../ traversal out of the repo fails closed',
+  withManifestUrl(`${'https://jaredsburrows.com'}${TRAVERSAL}`),
+  1, `references missing file ${TRAVERSAL}`);
+
+// Percent-encoded traversal: `%2e%2e%2f…` is one opaque segment to the URL
+// parser, so only decoding exposes the `../`, which is why containment is
+// checked after the decode and not before. This one already exited non-zero
+// before the fix, but for the wrong reason (the unfixed check never decoded,
+// so it looked for a file literally named `%2e%2e%2f…`); the message assertion
+// is what pins it to the containment guard.
+testFiles('a manifest entry url with a percent-encoded traversal fails closed',
+  withManifestUrl(`${'https://jaredsburrows.com'}${ENCODED_TRAVERSAL}`),
+  1, 'escapes the site root');
+
+// The Agentmap directive reaches the same helper, so the single fix covers it …
+testFiles('a robots.txt Agentmap with a ../ traversal out of the repo fails closed',
+  { 'robots.txt': originalRobots.replace(/^Agentmap:.*$/m, `Agentmap: https://jaredsburrows.com${TRAVERSAL}`) },
+  1, `robots.txt Agentmap references missing file ${TRAVERSAL}`);
+
+// … and so does the pre-existing api-catalog href caller, which had the same
+// defect and is closed by the same change instead of a per-call-site guard.
+testFiles('an api-catalog href with a ../ traversal out of the repo fails closed',
+  {
+    '.well-known/api-catalog': fs.readFileSync(path.join(repoRoot, '.well-known/api-catalog'), 'utf8')
+      .replace('https://jaredsburrows.com/api/openapi.json', `https://jaredsburrows.com${TRAVERSAL}`),
+  },
+  1, `.well-known/api-catalog entry 1 references missing file ${TRAVERSAL}`);
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);
