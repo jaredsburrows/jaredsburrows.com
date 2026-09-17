@@ -96,6 +96,29 @@ for (const [, origin] of indexHtml.matchAll(/<iframe[^>]+src="(https:\/\/[^"/]+)
   requireCsp('frame-src', origin, 'index.html embeds it as an iframe');
 }
 
+// --- Measurement CSP coverage: a GA4 hit does not stay on the tag's own
+// origin. gtag.js fans /g/collect out to google-analytics.com, to
+// analytics.google.com, and — with Google signals on the property — to
+// stats.g.doubleclick.net and www.google.com. None of that is visible in the
+// markup, so the loops above cannot infer it; every one of these was blocked
+// in production until listed (PageSpeed console, September 2026).
+// Note the apex: `https://*.analytics.google.com` does NOT match
+// `analytics.google.com` — a `*.` source requires at least one label in front
+// — so the wildcard that looks like it covers the apex silently does not.
+const measurementEndpoints = [
+  ['https://www.google-analytics.com', 'gtag.js posts /g/collect there'],
+  ['https://analytics.google.com', 'gtag.js posts /g/collect to the apex, which no *. wildcard covers'],
+  ['https://stats.g.doubleclick.net', 'Google signals posts /g/collect there'],
+  ['https://www.google.com', 'Google signals posts /g/collect and /ccm/collect there'],
+];
+// Gate on the tag actually being loaded, so removing analytics drops the
+// requirement instead of freezing it in.
+if (/googletagmanager\.com\/(?:gtag\/js|gtm\.js)/.test(indexHtml)) {
+  for (const [origin, why] of measurementEndpoints) {
+    requireCsp('connect-src', origin, why);
+  }
+}
+
 // --- Embed referer: the talk iframes are cross-origin, and YouTube's player
 // refuses to configure without a referer. The document Referrer-Policy is not
 // enough — an unfixed Cloudflare zone rule overrides it (see .team/SECURITY.md)
