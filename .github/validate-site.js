@@ -298,12 +298,31 @@ const sameOriginPath = (reference) => {
   return /^[\\/]{2}/.test(rest) ? reference : (rest || '/');
 };
 // Walks parsed data (JSON-LD, any object or array) for the same absolute URLs.
+//
+// Iterative and depth-capped (S20). The recursive version was called from
+// OUTSIDE the try that guards JSON.parse, so a deeply nested block threw an
+// uncaught RangeError: a raw stack trace with no bad() message and no file
+// name, and every invariant declared after the JSON-LD loop (API catalog,
+// auth.md discovery, _headers overlap, _redirects syntax) never ran at all —
+// one malformed block silently disabling four unrelated checks. Cycles are
+// impossible because JSON.parse always returns a tree, so depth was the only
+// hazard, and V8's parser is itself iterative: it hands back a 20000-deep
+// object quite happily for the walk to overflow on.
+const MAX_JSON_LD_DEPTH = 64;
 const checkSameOriginUrls = (source, value) => {
-  if (typeof value === 'string') {
-    const reference = sameOriginPath(value);
-    if (reference !== undefined && reference !== '/') checkLocal(source, reference);
-  } else if (value !== null && typeof value === 'object') {
-    for (const item of Object.values(value)) checkSameOriginUrls(source, item);
+  const queue = [[value, 0]];
+  for (let i = 0; i < queue.length; i += 1) {
+    const [node, depth] = queue[i];
+    if (typeof node === 'string') {
+      const reference = sameOriginPath(node);
+      if (reference !== undefined && reference !== '/') checkLocal(source, reference);
+    } else if (node !== null && typeof node === 'object') {
+      if (depth >= MAX_JSON_LD_DEPTH) {
+        bad(`${source} nests more than ${MAX_JSON_LD_DEPTH} levels deep — no consumer reads structured data that deep and nothing hand-written comes near it, so the block is malformed and the rest of it was not walked`);
+        return;
+      }
+      for (const item of Object.values(node)) queue.push([item, depth + 1]);
+    }
   }
 };
 for (const [file, html] of [['index.html', indexHtml], ['404.html', notFoundHtml]]) {
@@ -379,12 +398,22 @@ for (const [file, html] of [['index.html', indexHtml], ['404.html', notFoundHtml
       bad(`${name} is not valid JSON: ${error.message} — search engines drop the whole block, and the page still looks perfect`);
       return;
     }
-    for (const node of Array.isArray(data) ? data : [data]) {
-      if (!namesSchemaOrg(node?.['@context'])) {
-        bad(`${name} has @context ${JSON.stringify(node?.['@context'] ?? null)} — it must resolve to the schema.org host (a lookalike like schema.org.org parses fine and means nothing) or every field in the block is unrecognized vocabulary`);
+    // Everything past the parse runs inside a try as well: four more
+    // invariants are declared after this loop (API catalog, auth.md discovery,
+    // _headers overlap, _redirects syntax) and a throw here would skip every
+    // one of them, with a stack trace instead of a message naming the file
+    // (S20). The walk is bounded now, so this is the backstop that keeps that
+    // class of failure per-block rather than fatal, not a live path.
+    try {
+      for (const node of Array.isArray(data) ? data : [data]) {
+        if (!namesSchemaOrg(node?.['@context'])) {
+          bad(`${name} has @context ${JSON.stringify(node?.['@context'] ?? null)} — it must resolve to the schema.org host (a lookalike like schema.org.org parses fine and means nothing) or every field in the block is unrecognized vocabulary`);
+        }
       }
+      checkSameOriginUrls(name, data);
+    } catch (error) {
+      bad(`${name} could not be validated: ${error.message}`);
     }
-    checkSameOriginUrls(name, data);
   });
 }
 

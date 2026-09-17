@@ -182,15 +182,17 @@ test('no embed() call site omits the allow argument', (src) => {
 // --- Measurement CSP coverage: gtag.js fans /g/collect out to hosts that
 // appear nowhere in the markup, so only an explicit list catches a missing one.
 // Every case below was blocked in production (PageSpeed console, Sept 2026).
+// `expectStderrIncludes` takes one substring or a list of them — a list is how
+// a case proves that a later, unrelated invariant still ran (S20).
 const testFiles = (name, overrides, expectCode, expectStderrIncludes) => {
   let result;
   try {
     result = runValidator(overrides);
     assert.strictEqual(result.code, expectCode,
       `expected exit ${expectCode}, got ${result.code}\nstderr:\n${result.stderr}`);
-    if (expectStderrIncludes) {
-      assert.ok(result.stderr.includes(expectStderrIncludes),
-        `expected stderr to include ${JSON.stringify(expectStderrIncludes)}\nstderr:\n${result.stderr}`);
+    for (const expected of [expectStderrIncludes ?? []].flat()) {
+      assert.ok(result.stderr.includes(expected),
+        `expected stderr to include ${JSON.stringify(expected)}\nstderr:\n${result.stderr}`);
     }
     console.log(`ok - ${name}`);
     passed += 1;
@@ -733,6 +735,27 @@ for (const [breakout, why] of [
 // and invisible to every HTML tokenizer.
 testFiles('a JSON-LD string with a correctly escaped <\\/script passes', {
   'index.html': addJsonLdField('"alternateName": "x<\\/script><script>alert(1)<\\/script>"'),
+}, 0);
+
+// --- S20: the same-origin walk recursed once per nesting level and was called
+// outside the try guarding JSON.parse, so a deep block threw an uncaught
+// RangeError — a stack trace with no message and no file name, and none of the
+// four invariants declared after the JSON-LD loop (API catalog, auth.md
+// discovery, _headers overlap, _redirects syntax) ever ran. Deleting auth.md
+// alongside the deep block is what proves they run now: before the fix that
+// second error was never reported at all.
+const NESTED_LEVELS = 20000;
+const nestedBlock = (levels) =>
+  `{"@context": "https://schema.org", "@type": "Person", "deep": ${'{"a": '.repeat(levels)}1${'}'.repeat(levels)}}`;
+
+testFiles(`a JSON-LD block nested ${NESTED_LEVELS} levels deep fails by name, and the checks after it still run`, {
+  'index.html': withSecondBlock(nestedBlock(NESTED_LEVELS)),
+  'auth.md': null,
+}, 1, ['index.html JSON-LD block 2 nests more than', 'auth.md is missing']);
+
+// The depth cap is far above anything hand-written: ordinary nesting passes.
+testFiles('an ordinarily nested JSON-LD block passes', {
+  'index.html': withSecondBlock(nestedBlock(20)),
 }, 0);
 
 console.log(`\n${passed} passed, ${failed} failed`);
