@@ -30,6 +30,26 @@ const MARKDOWN_MEDIA_TYPE = 'text/markdown';
 const MARKDOWN_ASSET = '/index.md';
 
 /**
+ * What `/` is allowed to say about caching, pinned on the markdown branch below.
+ *
+ * Two representations share one URL here, and Cloudflare's cache keys on the URL
+ * and `Accept-Encoding` only — it ignores `Vary` for every other request header —
+ * so a single stored copy would be handed to every client whatever its `Accept`
+ * said: one agent request and the markdown homepage is what browsers and
+ * Googlebot get. The only thing that keeps the two apart is that `/` is never
+ * stored, which is what this value says. It is the Workers Assets default, so
+ * pinning it states what already happens rather than changing it.
+ *
+ * It is pinned in code because the markdown branch republishes another asset's
+ * headers: the response below is `/index.md`'s, returned under the URL `/`, so
+ * any `_headers` rule matching `/index.md` — a TTL there looks exactly as
+ * reasonable as the one on `/static/js/*` — would otherwise land its
+ * `Cache-Control` on `/` (SECURITY.md S6). `validate-site.js` independently
+ * refuses a TTL on `/` itself; neither control covers the other's route.
+ */
+const UNCACHEABLE = 'public, max-age=0, must-revalidate';
+
+/**
  * Statuses whose responses carry no body. `new Response()` throws when given one
  * of these together with a body, so a blind re-wrap would turn a revalidation
  * into a 500, and both paths below say what they do about it: the HTML path
@@ -228,6 +248,10 @@ export default {
         headers.set('content-type', `${MARKDOWN_MEDIA_TYPE}; charset=utf-8`);
         headers.set('vary', varyWithAccept(headers.get('vary')));
         headers.set('x-content-type-options', 'nosniff');
+        // Stated here for the same reason as the content type: these are
+        // `/index.md`'s headers being published under `/`, and `/` is the URL
+        // with two representations on it. See UNCACHEABLE.
+        headers.set('cache-control', UNCACHEABLE);
         return new Response(NULL_BODY_STATUSES.has(markdown.status) ? null : markdown.body, {
           status: markdown.status,
           statusText: markdown.statusText,

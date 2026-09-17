@@ -114,11 +114,24 @@ const HTML = new Response('<!DOCTYPE html>', {
     'content-type': 'text/html; charset=utf-8',
     etag: HTML_ETAG,
     link: '</static/css/home.css>; rel=preload; as=style',
+    'cache-control': 'public, max-age=0, must-revalidate',
   },
 });
+// The twin carries a TTL of its own here, because in production it can: the
+// markdown response is /index.md's headers republished under /, so every
+// _headers rule matching /index.md lands on the negotiated URL (SECURITY.md S6).
+// Nothing in _headers gives it one today; these tests are what stops it
+// mattering if one is ever added.
 const MARKDOWN = new Response('# Jared Burrows\n', {
-  headers: { 'content-type': 'text/markdown; charset=utf-8', etag: MARKDOWN_ETAG },
+  headers: {
+    'content-type': 'text/markdown; charset=utf-8',
+    etag: MARKDOWN_ETAG,
+    'cache-control': 'public, max-age=3600',
+  },
 });
+
+/** The Workers Assets default, and the only Cache-Control / may answer with. */
+const UNCACHEABLE = 'public, max-age=0, must-revalidate';
 
 const homepage = () => stubAssets({ '/': HTML, '/index.md': MARKDOWN });
 
@@ -132,6 +145,8 @@ test('/ with Accept: text/markdown is answered with the twin', async () => {
   assert.equal(response.headers.get('content-type'), 'text/markdown; charset=utf-8');
   assert.equal(response.headers.get('vary'), 'Accept');
   assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(response.headers.get('cache-control'), UNCACHEABLE,
+    'a TTL on /index.md must not follow the twin onto /, where two representations share one URL');
   assert.equal(await response.text(), '# Jared Burrows\n');
 
   // One subrequest, for the twin, with a neutral Accept: this fetch names an
@@ -167,6 +182,8 @@ test('a markdown revalidation with a matching ETag is answered 304, not re-sent'
     'the client is being told its markdown copy is current, so the 304 must not claim to be HTML');
   assert.equal(response.headers.get('vary'), 'Accept',
     'the twin subrequest never matches the _headers "/" rule, so this one is on the Worker');
+  assert.equal(response.headers.get('cache-control'), UNCACHEABLE,
+    'a 304 refreshes the stored headers, so an unpinned TTL would poison / on revalidation too');
   assert.equal(response.headers.get('etag'), MARKDOWN_ETAG);
 
   assert.deepEqual(env.requests.map((request) => new URL(request.url).pathname), ['/index.md'],
@@ -298,7 +315,11 @@ test('a HEAD request negotiates and keeps its method', async () => {
 });
 
 test('paths other than / are passed straight through', async () => {
-  const env = stubAssets({ '/static/css/home.css': new Response('body{}', { headers: { 'content-type': 'text/css' } }) });
+  const env = stubAssets({
+    '/static/css/home.css': new Response('body{}', {
+      headers: { 'content-type': 'text/css', 'cache-control': 'public, max-age=3600' },
+    }),
+  });
   const response = await worker.fetch(new Request('https://jaredsburrows.com/static/css/home.css', {
     headers: { accept: 'text/markdown' },
   }), env);
@@ -306,6 +327,20 @@ test('paths other than / are passed straight through', async () => {
   // In production run_worker_first: ["/"] means this request never reaches the
   // Worker at all; if it ever does, it must still be an ordinary asset serve.
   assert.equal(response.headers.get('content-type'), 'text/css');
+  assert.equal(response.headers.get('cache-control'), 'public, max-age=3600',
+    'only / has two representations, so the uncacheable pin must not reach the TTLs _headers sets');
   assert.equal(await response.text(), 'body{}');
   assert.deepEqual(env.requests.map((request) => new URL(request.url).pathname), ['/static/css/home.css']);
+});
+
+test('the HTML branch keeps the cache headers the asset router gave it', async () => {
+  const env = homepage();
+  const response = await worker.fetch(new Request('https://jaredsburrows.com/', {
+    headers: { accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
+  }), env);
+
+  // Nothing is pinned here: this response is / answering as itself, so its
+  // Cache-Control arrives from the asset router and _headers, and a TTL wrongly
+  // added there is validate-site.js's half of the same invariant.
+  assert.equal(response.headers.get('cache-control'), UNCACHEABLE);
 });
