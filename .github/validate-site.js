@@ -10,14 +10,21 @@
 //   Presentations section in July 2026)
 // - an embed iframe built without an explicit referrerpolicy, which broke
 //   both YouTube talks with Error 153 in September 2026
-// - a page or _headers preload referencing a local file that doesn't exist
+// - a page or _headers preload referencing a local file that doesn't exist,
+//   including the same-origin ABSOLUTE references (og:image, twitter:image,
+//   the JSON-LD image) a rename leaves dangling: image TTLs are 30 days and a
+//   Cloudflare purge never reaches a browser cache, so renaming the file is
+//   the only cache-bust there is and half a rename is a 30-day 404
 // - /auth.md losing the H1 that agent discovery matches on
 // - two _headers rules setting the same header on overlapping paths
 //   (values from all matching rules comma-join into one broken header)
-// The API catalog checks are the exception: nothing has broken yet, because
-// the catalog is new. They exist because RFC 9727 makes machine-read promises
-// about other files, and a broken one is invisible from a browser — no page
-// renders it, so only an agent hitting a 404 would ever find out.
+// The API catalog and JSON-LD checks are the exception: nothing has broken
+// yet, because both are new. The catalog exists because RFC 9727 makes
+// machine-read promises about other files, and a broken one is invisible from
+// a browser — no page renders it, so only an agent hitting a 404 would ever
+// find out. JSON-LD fails the same way: no browser renders it, so one trailing
+// comma makes search engines drop the whole block off a page that still looks
+// perfect.
 // Usage: node .github/validate-site.js [site root]
 'use strict';
 
@@ -206,9 +213,32 @@ const checkLocal = (source, reference) => {
     bad(`${source} references missing file ${reference}`);
   }
 };
+// An absolute URL back to this origin names a file in this tree just as surely
+// as a relative path does. og:image and twitter:image have to be absolute for
+// the scrapers, so skipping every https: reference left them unchecked: a
+// rename of static/image/avatar-460.jpg landed half-done with CI green
+// (.team/SECURITY.md S11). With image TTLs at 30 days and Cloudflare purge
+// unable to reach a browser cache, the rename IS the cache-bust — so every
+// reference to a renamed asset has to move in the same commit.
+const SITE_ORIGIN = 'https://jaredsburrows.com';
+const sameOriginPath = (reference) =>
+  (reference.startsWith(`${SITE_ORIGIN}/`) ? reference.slice(SITE_ORIGIN.length) : undefined);
+// Walks parsed data (JSON-LD, any object or array) for the same absolute URLs.
+const checkSameOriginUrls = (source, value) => {
+  if (typeof value === 'string') {
+    const reference = sameOriginPath(value);
+    if (reference !== undefined && reference !== '/') checkLocal(source, reference);
+  } else if (value !== null && typeof value === 'object') {
+    for (const item of Object.values(value)) checkSameOriginUrls(source, item);
+  }
+};
 for (const [file, html] of [['index.html', indexHtml], ['404.html', notFoundHtml]]) {
-  for (const [, reference] of html.matchAll(/(?:src|href)="([^"]+)"/g)) {
-    if (/^(https?:|mailto:|#|data:)/.test(reference) || reference === '/') continue;
+  // content="" is prose far more often than a reference — the description, the
+  // viewport, the CSP mirror — so only its same-origin absolute URLs count.
+  // src/href keep taking relative values as well.
+  for (const [, attribute, value] of html.matchAll(/(src|href|content)="([^"]+)"/g)) {
+    const reference = sameOriginPath(value) ?? (attribute === 'content' ? undefined : value);
+    if (reference === undefined || /^(https?:|mailto:|#|data:)/.test(reference) || reference === '/') continue;
     checkLocal(file, reference);
   }
 }
@@ -216,12 +246,38 @@ for (const [, reference] of headers.matchAll(/Link:\s*<([^>]+)>/g)) {
   checkLocal('_headers Link', reference);
 }
 
+// --- JSON-LD: structured data no browser renders and vnu does not read (it
+// validates the script element, never its contents), so a break shows up
+// nowhere until the search result quietly loses its rich data. One trailing comma and a search engine drops the entire
+// block; an @context that does not name schema.org leaves every field in it
+// unrecognized vocabulary. Same-origin URLs inside a block are references like
+// any other — the image field carries the same absolute avatar URL the meta
+// tags do, and a rename has to move all of them together.
+for (const [file, html] of [['index.html', indexHtml], ['404.html', notFoundHtml]]) {
+  const blocks = [...html.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi)];
+  blocks.forEach(([, body], index) => {
+    const name = `${file} JSON-LD block ${index + 1}`;
+    let data;
+    try {
+      data = JSON.parse(body);
+    } catch (error) {
+      bad(`${name} is not valid JSON: ${error.message} — search engines drop the whole block, and the page still looks perfect`);
+      return;
+    }
+    for (const node of Array.isArray(data) ? data : [data]) {
+      const context = [node?.['@context']].flat().filter((value) => typeof value === 'string').join(' ');
+      if (!context.includes('schema.org')) {
+        bad(`${name} has @context ${JSON.stringify(node?.['@context'] ?? null)} — it must name schema.org or every field in the block is unrecognized vocabulary`);
+      }
+    }
+    checkSameOriginUrls(name, data);
+  });
+}
+
 // --- RFC 9727 API catalog. The catalog, api/openapi.json and api/talks.json
 // restate facts that live elsewhere, and nothing at runtime notices when one
 // drifts: a stale talks.json serves last year's talks forever, and a catalog
 // href to a renamed file is a 404 that an agent hits before any human does.
-const SITE_ORIGIN = 'https://jaredsburrows.com';
-
 const parseJson = (name) => {
   try {
     return JSON.parse(read(name));
@@ -374,4 +430,4 @@ if (errors.length > 0) {
   for (const message of errors) console.error(`  - ${message}`);
   process.exit(1);
 }
-console.log('✓ site invariants hold (CSP parity + coverage, embed referer, id contract, file references, auth.md discovery, API catalog, _headers overlap, _redirects syntax)');
+console.log('✓ site invariants hold (CSP parity + coverage, embed referer, id contract, file references, JSON-LD, auth.md discovery, API catalog, _headers overlap, _redirects syntax)');

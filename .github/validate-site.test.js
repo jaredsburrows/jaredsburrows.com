@@ -361,5 +361,85 @@ testFiles('auth.md with the name only in an H2 fails closed',
 testFiles('auth.md with a titled H1 containing the name passes',
   { 'auth.md': originalAuthMd.replace(/^#\s+.*$/m, "# Jared Burrows' auth.md") }, 0);
 
+// --- T4: JSON-LD. Nothing renders it and vnu never reads inside the script
+// element, so a block that stops parsing breaks in complete silence: the page
+// looks perfect and search engines drop the whole thing. The mutations below
+// are structural rather than field-by-field on purpose — they must keep
+// working when the block is restructured.
+const JSONLD_BLOCK = /(<script[^>]*type="application\/ld\+json"[^>]*>)([\s\S]*?)(<\/script>)/i;
+assert.ok(JSONLD_BLOCK.test(originalIndexHtml),
+  'fixture assumption broken: index.html no longer has a JSON-LD block');
+
+const mutateJsonLd = (transform) =>
+  originalIndexHtml.replace(JSONLD_BLOCK, (match, open, body, close) => `${open}${transform(body)}${close}`);
+
+// A trailing comma is the classic hand-edit defect: valid-looking, fatal to
+// every consumer, and invisible on the rendered page.
+testFiles('a trailing comma in the JSON-LD block fails closed', {
+  'index.html': mutateJsonLd((body) => {
+    const close = body.lastIndexOf('}');
+    return `${body.slice(0, close)},${body.slice(close)}`;
+  }),
+}, 1, 'index.html JSON-LD block 1 is not valid JSON');
+
+// A typo'd @context parses fine and means nothing: every field below it stops
+// being schema.org vocabulary.
+testFiles('a JSON-LD @context that is not schema.org fails closed', {
+  'index.html': mutateJsonLd((body) =>
+    body.replace(/("@context"\s*:\s*)"[^"]*"/, '$1"https://example.org"')),
+}, 1, 'must name schema.org');
+
+// More than one block is the shape this site is heading for (a second block
+// alongside the first), so each has to be parsed and named on its own.
+const SECOND_BLOCK = (json) => `<script type="application/ld+json">${json}</script>`;
+const withSecondBlock = (json) =>
+  originalIndexHtml.replace(JSONLD_BLOCK, (match) => `${match}\n    ${SECOND_BLOCK(json)}`);
+
+testFiles('a second, valid JSON-LD block passes', {
+  'index.html': withSecondBlock('{"@context": "https://schema.org", "@type": "WebSite", "name": "Jared Burrows", "url": "https://jaredsburrows.com/"}'),
+}, 0);
+
+testFiles('a malformed second JSON-LD block fails closed naming block 2', {
+  'index.html': withSecondBlock('{"@context": "https://schema.org", "@type": "WebSite",}'),
+}, 1, 'index.html JSON-LD block 2 is not valid JSON');
+
+// --- S11: same-origin ABSOLUTE references. og:image, twitter:image and the
+// JSON-LD image must be absolute for the scrapers, and static/image/avatar-460.jpg
+// is referenced by nothing else — so before this check a rename of that file
+// left three dangling references with the build green. Image TTLs are 30 days
+// and a Cloudflare purge never reaches a browser cache, which makes the rename
+// the only cache-bust available: a half-done one is a 30-day 404.
+const AVATAR = 'static/image/avatar-460.jpg';
+assert.ok(originalIndexHtml.includes(`https://jaredsburrows.com/${AVATAR}`),
+  `fixture assumption broken: index.html no longer references ${AVATAR} absolutely`);
+assert.ok(!originalIndexHtml.includes(`"${AVATAR}"`),
+  `fixture assumption broken: ${AVATAR} is now referenced relatively too, so the absolute refs are no longer the only ones`);
+
+testFiles(`renaming ${AVATAR} without updating the meta tags fails closed`, {
+  [AVATAR]: null,
+  'static/image/avatar-461.jpg': 'not really a JPEG, and existence is all that is checked',
+}, 1, `index.html references missing file /${AVATAR}`);
+
+testFiles('an og:image pointing at a file that does not exist fails closed', {
+  'index.html': originalIndexHtml.replace(
+    /(property="og:image" content="https:\/\/jaredsburrows\.com)\/[^"]+"/,
+    '$1/static/image/avatar-gone.jpg"'),
+}, 1, 'index.html references missing file /static/image/avatar-gone.jpg');
+
+// The JSON-LD image is the same absolute URL in a place the attribute walk
+// cannot see, so it needs its own proof.
+testFiles('a JSON-LD image pointing at a file that does not exist fails closed', {
+  'index.html': mutateJsonLd((body) =>
+    body.replace(/("image"\s*:\s*"https:\/\/jaredsburrows\.com)\/[^"]+"/, '$1/static/image/avatar-gone.jpg"')),
+}, 1, 'JSON-LD block 1 references missing file /static/image/avatar-gone.jpg');
+
+// The other half of the invariant: only SAME-origin absolute URLs name a file
+// in this tree. A third-party image URL is not a local reference and must not
+// be reported as a missing file, or the check would be unusable.
+testFiles('an off-origin og:image is not treated as a local file', {
+  'index.html': originalIndexHtml.replace(
+    /(property="og:image" content=)"[^"]+"/, '$1"https://example.com/avatar.jpg"'),
+}, 0);
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);
