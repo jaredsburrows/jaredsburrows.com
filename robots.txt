@@ -2,3 +2,4 @@ User-agent: *
 Content-Signal: ai-train=yes, search=yes, ai-input=yes
 Disallow:
 Sitemap: https://jaredsburrows.com/sitemap.xml
+Agentmap: https://jaredsburrows.com/.well-known/ard.json
