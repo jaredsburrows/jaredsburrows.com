@@ -376,8 +376,9 @@ if (catalog && !Array.isArray(catalog.linkset)) {
       for (const link of links) {
         if (typeof link?.href !== 'string') {
           bad(`${name} has a ${relation} link with no href`);
-        } else if (link.href.startsWith(`${SITE_ORIGIN}/`)) {
-          checkLocal(name, link.href.slice(SITE_ORIGIN.length));
+        } else {
+          const reference = sameOriginPath(link.href);
+          if (reference !== undefined) checkLocal(name, reference);
         }
       }
     }
@@ -461,19 +462,17 @@ for (const name of ARD_PATHS) {
     }
     // Same rule as the catalog hrefs: only same-origin URLs can be checked
     // against this tree, and only they are ours to keep honest.
-    if (hasUrl && entry.url.startsWith(`${SITE_ORIGIN}/`)) {
-      checkLocal(label, entry.url.slice(SITE_ORIGIN.length));
-    }
+    const reference = hasUrl ? sameOriginPath(entry.url) : undefined;
+    if (reference !== undefined) checkLocal(label, reference);
   });
 }
 
 // robots.txt Agentmap: the third route to the same manifest, and the one with
 // no safety net anywhere else. Conforming robots parsers ignore directives they
 // do not recognise, so a typo here costs nothing a crawler would ever report.
-for (const [, reference] of robotsTxt.matchAll(/^[ \t]*Agentmap:[ \t]*(\S+)[ \t]*$/gim)) {
-  if (reference.startsWith(`${SITE_ORIGIN}/`)) {
-    checkLocal('robots.txt Agentmap', reference.slice(SITE_ORIGIN.length));
-  }
+for (const [, declared] of robotsTxt.matchAll(/^[ \t]*Agentmap:[ \t]*(\S+)[ \t]*$/gim)) {
+  const reference = sameOriginPath(declared);
+  if (reference !== undefined) checkLocal('robots.txt Agentmap', reference);
 }
 
 // --- /auth.md discovery: agent tooling finds this document by fetching

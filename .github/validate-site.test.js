@@ -605,6 +605,18 @@ testFiles('a JSON-LD same-origin URL with a ../ traversal out of the repo fails 
     body.replace(/("image"\s*:\s*"https:\/\/jaredsburrows\.com)\/[^"]+"/, `$1${TRAVERSAL}"`)),
 }, 1, `index.html JSON-LD block 1 references missing file ${TRAVERSAL}`);
 
+// The same walk, percent-encoded: this is the only JSON-LD case that reaches
+// the decode step. The raw-`..` case above collapses in the URL parser, so it
+// is judged missing and never exercises decodeURIComponent; `%2e%2e%2f` stays
+// one opaque segment until the decode, and only then does containment have
+// anything to catch. Asserting on 'escapes the site root' rather than a
+// missing-file message is what pins it to the containment guard instead of
+// letting a literal lookup for a file named `%2e%2e%2f…` pass it for free.
+testFiles('a JSON-LD image with a percent-encoded traversal fails closed', {
+  'index.html': mutateJsonLd((body) =>
+    body.replace(/("image"\s*:\s*"https:\/\/jaredsburrows\.com)\/[^"]+"/, `$1${ENCODED_TRAVERSAL}"`)),
+}, 1, 'escapes the site root');
+
 testFiles('an og:image with a ../ traversal out of the repo fails closed', {
   'index.html': originalIndexHtml.replace(
     /(property="og:image" content="https:\/\/jaredsburrows\.com)\/[^"]+"/,
