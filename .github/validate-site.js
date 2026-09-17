@@ -96,6 +96,46 @@ for (const [, origin] of indexHtml.matchAll(/<iframe[^>]+src="(https:\/\/[^"/]+)
   requireCsp('frame-src', origin, 'index.html embeds it as an iframe');
 }
 
+// --- Measurement CSP coverage: a GA4 hit does not stay on the tag's own
+// origin. gtag.js fans /g/collect out to google-analytics.com, to
+// analytics.google.com, and — with Google signals on the property — to
+// stats.g.doubleclick.net and www.google.com. None of that is visible in the
+// markup, so the loops above cannot infer it; every one of these was blocked
+// in production until listed (PageSpeed console, September 2026).
+// Note the apex: `https://*.analytics.google.com` does NOT match
+// `analytics.google.com` — a `*.` source requires at least one label in front
+// — so the wildcard that looks like it covers the apex silently does not.
+const measurementEndpoints = [
+  ['https://www.google-analytics.com', 'gtag.js posts /g/collect there'],
+  ['https://analytics.google.com', 'gtag.js posts /g/collect to the apex, which no *. wildcard covers'],
+  ['https://stats.g.doubleclick.net', 'Google signals posts /g/collect there'],
+  ['https://www.google.com', 'Google signals posts /g/collect and /ccm/collect there'],
+];
+// Gate on the tag actually being loaded, so removing analytics drops the
+// requirement instead of freezing it in. The loader URL is matched by parsed
+// host and path, not by a substring or a regex over the raw HTML: a pattern
+// like /googletagmanager\.com\/gtag\/js/ is unanchored at both ends, so both
+// `https://notgoogletagmanager.com/gtag/js` and any URL merely carrying that
+// text in a query string satisfy it. GTM's own loader builds its URL inline
+// rather than a src attribute, so this scans every URL in the file, not just
+// the ones the <script src> loop above can see.
+const TAG_HOST = 'www.googletagmanager.com';
+const TAG_PATHS = new Set(['/gtag/js', '/gtm.js']);
+const loadsTag = [...indexHtml.matchAll(/https:\/\/[^\s"'<>]+/g)].some(([reference]) => {
+  let url;
+  try {
+    url = new URL(reference);
+  } catch {
+    return false;
+  }
+  return url.host === TAG_HOST && TAG_PATHS.has(url.pathname);
+});
+if (loadsTag) {
+  for (const [origin, why] of measurementEndpoints) {
+    requireCsp('connect-src', origin, why);
+  }
+}
+
 // --- Embed referer: the talk iframes are cross-origin, and YouTube's player
 // refuses to configure without a referer. The document Referrer-Policy is not
 // enough — an unfixed Cloudflare zone rule overrides it (see .team/SECURITY.md)
