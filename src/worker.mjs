@@ -26,12 +26,30 @@ const MARKDOWN_MEDIA_TYPE = 'text/markdown';
 const MARKDOWN_ASSET = '/index.md';
 
 /**
- * Statuses whose responses carry no body. Passing a body — even `null` from an
- * already-bodyless response — to `new Response()` with one of these throws, so a
- * blind re-wrap would turn a 304 revalidation into a 500. `_headers` still puts
- * `Vary: Accept` on `/`, which is what covers the responses left untouched here.
+ * Statuses whose responses carry no body. `new Response()` throws when given one
+ * of these together with a body, so a blind re-wrap would turn a revalidation
+ * into a 500, and both paths below say what they do about it: the HTML path
+ * hands the asset router's response straight back (safe — `_headers` has already
+ * put `Vary: Accept` on `/`), while the markdown path must re-wrap, because the
+ * media type it claims is not the one the asset was served as, and so passes a
+ * null body explicitly.
  */
 const NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
+
+/**
+ * Request headers forwarded onto the subrequest for the twin.
+ *
+ * Only the two revalidation conditionals, and only because the `ETag` the client
+ * is holding came from `/index.md` in the first place: the markdown 200 below
+ * passes the asset's own validators through, so the client echoes them back at a
+ * URL (`/`) that would otherwise never see them. Without this the twin can never
+ * answer 304 and re-sends the whole document on every poll while advertising an
+ * `ETag` and `must-revalidate` that invite the revalidation. Everything else the
+ * client sent is deliberately dropped: the subrequest is for a different URL and
+ * a different representation, so `Accept` stays neutral (see below), and a
+ * `Range` or `If-Match` written against `/` has no meaning for `/index.md`.
+ */
+const CONDITIONAL_HEADERS = ['if-none-match', 'if-modified-since'];
 
 /**
  * One entry of a parsed `Accept` header.
@@ -160,22 +178,32 @@ export default {
 
     if (negotiable && wantsMarkdown(request.headers.get('accept'))) {
       // A neutral `Accept` on the subrequest: this fetch names one exact file, so
-      // nothing downstream should try to negotiate it a second time.
+      // nothing downstream should try to negotiate it a second time. The client's
+      // revalidation conditionals ride along, which is the only way this branch
+      // can answer anything but a full body.
+      const subrequestHeaders = new Headers({ accept: '*/*' });
+      for (const name of CONDITIONAL_HEADERS) {
+        const value = request.headers.get(name);
+        if (value !== null) subrequestHeaders.set(name, value);
+      }
       const markdown = await env.ASSETS.fetch(new Request(new URL(MARKDOWN_ASSET, url), {
         method: request.method,
-        headers: { accept: '*/*' },
+        headers: subrequestHeaders,
       }));
       // A missing or broken twin is a bug; serving no homepage at all is an
       // outage. So anything other than a healthy asset falls through to the HTML
-      // below, where CI (validate-site.js) is what keeps the twin honest.
-      if (markdown.ok) {
+      // below, where CI (validate-site.js) is what keeps the twin honest. A 304
+      // is healthy and is NOT `ok` — `Response.ok` is 200–299 — so it is named
+      // here: without it a correct revalidation would fall through and hand the
+      // HTML page to a client that asked for markdown and already holds it.
+      if (markdown.ok || markdown.status === 304) {
         const headers = new Headers(markdown.headers);
         // The asset is served as text/markdown already, but this response stands
         // in for `/`, so the type it claims is stated here rather than inherited.
         headers.set('content-type', `${MARKDOWN_MEDIA_TYPE}; charset=utf-8`);
         headers.set('vary', varyWithAccept(headers.get('vary')));
         headers.set('x-content-type-options', 'nosniff');
-        return new Response(markdown.body, {
+        return new Response(NULL_BODY_STATUSES.has(markdown.status) ? null : markdown.body, {
           status: markdown.status,
           statusText: markdown.statusText,
           headers,

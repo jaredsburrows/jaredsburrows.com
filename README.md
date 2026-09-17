@@ -69,6 +69,12 @@ if its talks stop matching `static/js/talks.js` in either direction — and
 with a non-zero q, and at least as preferred as `text/html` — it returns
 `index.md` as the homepage; everything else gets the HTML.
 
+Revalidation works on both representations: `If-None-Match` and
+`If-Modified-Since` are forwarded onto the `index.md` subrequest, so an agent
+that already holds the Markdown homepage gets a 304 rather than the document
+again. The two carry different ETags, so neither one's validator can ever
+produce a 304 for the other.
+
 `assets.run_worker_first: ["/"]` in `wrangler.jsonc` scopes it to `/`, and
 `assets.binding` is what gives it `env.ASSETS.fetch`. Every other path is
 matched by Cloudflare's asset router before any code runs, so those requests

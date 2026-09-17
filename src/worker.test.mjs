@@ -74,16 +74,40 @@ const stubAssets = (files) => {
         const request = input instanceof Request ? input : new Request(input);
         requests.push(request);
         const response = files[new URL(request.url).pathname];
-        return response ? response.clone() : new Response('not found', { status: 404 });
+        if (!response) return new Response('not found', { status: 404 });
+        // The real asset router revalidates, which is the whole point of
+        // forwarding the conditional headers: a matching If-None-Match comes
+        // back as a bodyless 304 carrying the validators and nothing else.
+        const etag = response.headers.get('etag');
+        const conditional = (request.headers.get('if-none-match') ?? '')
+          .split(',').map((candidate) => candidate.trim()).filter(Boolean);
+        if (etag && conditional.includes(etag)) {
+          const headers = new Headers(response.headers);
+          for (const name of ['content-type', 'content-length']) headers.delete(name);
+          return new Response(null, { status: 304, headers });
+        }
+        return response.clone();
       },
     },
   };
 };
 
+// Distinct validators, because the two representations are different documents:
+// an ETag handed out for one must never satisfy a conditional request for the
+// other, or a cache would be told its HTML is current when it asked for markdown.
+const HTML_ETAG = '"index-html"';
+const MARKDOWN_ETAG = '"index-md"';
+
 const HTML = new Response('<!DOCTYPE html>', {
-  headers: { 'content-type': 'text/html; charset=utf-8', link: '</static/css/home.css>; rel=preload; as=style' },
+  headers: {
+    'content-type': 'text/html; charset=utf-8',
+    etag: HTML_ETAG,
+    link: '</static/css/home.css>; rel=preload; as=style',
+  },
 });
-const MARKDOWN = new Response('# Jared Burrows\n', { headers: { 'content-type': 'text/markdown; charset=utf-8' } });
+const MARKDOWN = new Response('# Jared Burrows\n', {
+  headers: { 'content-type': 'text/markdown; charset=utf-8', etag: MARKDOWN_ETAG },
+});
 
 const homepage = () => stubAssets({ '/': HTML, '/index.md': MARKDOWN });
 
@@ -118,6 +142,90 @@ test('/ from a browser is answered with HTML, and told to vary', async () => {
     '_headers still reaches the client through the binding');
   assert.equal(await response.text(), '<!DOCTYPE html>');
   assert.equal(new URL(env.requests[0].url).pathname, '/');
+});
+
+test('a markdown revalidation with a matching ETag is answered 304, not re-sent', async () => {
+  const env = homepage();
+  const response = await worker.fetch(new Request('https://jaredsburrows.com/', {
+    headers: { accept: 'text/markdown', 'if-none-match': MARKDOWN_ETAG },
+  }), env);
+
+  assert.equal(response.status, 304);
+  assert.equal(response.body, null, 'a 304 carries no body — constructing one with a body throws');
+  assert.equal(response.headers.get('content-type'), 'text/markdown; charset=utf-8',
+    'the client is being told its markdown copy is current, so the 304 must not claim to be HTML');
+  assert.equal(response.headers.get('vary'), 'Accept',
+    'the twin subrequest never matches the _headers "/" rule, so this one is on the Worker');
+  assert.equal(response.headers.get('etag'), MARKDOWN_ETAG);
+
+  assert.deepEqual(env.requests.map((request) => new URL(request.url).pathname), ['/index.md'],
+    'a 304 is not `ok`, and must still not fall through to the HTML page');
+  assert.equal(env.requests[0].headers.get('if-none-match'), MARKDOWN_ETAG,
+    'the conditional has to reach the asset router or the twin can never answer 304');
+});
+
+test('a markdown revalidation with a stale ETag gets the whole twin', async () => {
+  const env = homepage();
+  const response = await worker.fetch(new Request('https://jaredsburrows.com/', {
+    headers: { accept: 'text/markdown', 'if-none-match': '"stale"' },
+  }), env);
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'text/markdown; charset=utf-8');
+  assert.equal(response.headers.get('vary'), 'Accept');
+  assert.equal(await response.text(), '# Jared Burrows\n');
+});
+
+test('the HTML ETag does not satisfy a conditional markdown request', async () => {
+  const env = homepage();
+  const response = await worker.fetch(new Request('https://jaredsburrows.com/', {
+    headers: { accept: 'text/markdown', 'if-none-match': HTML_ETAG },
+  }), env);
+
+  // The two representations share a URL but not a validator. Answering 304 here
+  // would leave the client serving HTML it believes is the markdown homepage.
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('etag'), MARKDOWN_ETAG);
+  assert.equal(await response.text(), '# Jared Burrows\n');
+});
+
+test('If-Modified-Since rides along, and nothing else does', async () => {
+  const env = homepage();
+  const response = await worker.fetch(new Request('https://jaredsburrows.com/', {
+    headers: {
+      accept: 'text/markdown',
+      'if-modified-since': 'Wed, 17 Sep 2026 00:00:00 GMT',
+      'if-none-match': MARKDOWN_ETAG,
+      cookie: 'session=secret',
+      range: 'bytes=0-9',
+    },
+  }), env);
+
+  const [subrequest] = env.requests;
+  assert.equal(subrequest.headers.get('if-modified-since'), 'Wed, 17 Sep 2026 00:00:00 GMT');
+  assert.equal(subrequest.headers.get('if-none-match'), MARKDOWN_ETAG);
+  assert.equal(subrequest.headers.get('accept'), '*/*',
+    'the subrequest names one exact file, so it must not be negotiated again');
+  assert.equal(subrequest.headers.get('cookie'), null,
+    'the twin is a static file: forwarding credentials to it buys nothing');
+  assert.equal(subrequest.headers.get('range'), null,
+    'a byte range written against / does not describe /index.md');
+  assert.equal(response.status, 304);
+});
+
+test('a conditional request from a browser still revalidates the HTML', async () => {
+  const env = homepage();
+  const browserAccept = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
+  const response = await worker.fetch(new Request('https://jaredsburrows.com/', {
+    headers: { accept: browserAccept, 'if-none-match': HTML_ETAG },
+  }), env);
+
+  assert.equal(response.status, 304);
+  assert.equal(response.body, null);
+  assert.equal(response.headers.get('etag'), HTML_ETAG);
+  assert.deepEqual(env.requests.map((request) => new URL(request.url).pathname), ['/'],
+    'the HTML path forwards the original request, untouched, as it always did');
+  assert.equal(env.requests[0].headers.get('accept'), browserAccept);
 });
 
 test('a missing twin falls through to HTML rather than failing the homepage', async () => {
