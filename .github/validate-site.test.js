@@ -220,5 +220,25 @@ testFiles('removing the tag loads drops the measurement requirement', (() => {
   return { ...dropped, 'index.html': neutralize(dropped['index.html']) };
 })(), 0);
 
+// The gate matches the loader by parsed host and path, so a URL that merely
+// contains the tag host as a substring must not switch the requirement on.
+// An unanchored /googletagmanager\.com\/gtm\.js/ over the raw HTML accepted
+// both of these (CodeQL js/regex/missing-regexp-anchor, alert 5).
+// The lookalike goes in GTM's inline loader string rather than a src
+// attribute, so the script-src coverage loop stays out of the result.
+for (const lookalike of [
+  'https://notgoogletagmanager.com/gtm.js',
+  'https://evil.example/?x=googletagmanager.com/gtm.js',
+]) {
+  testFiles(`${lookalike} does not satisfy the tag-load gate`, (() => {
+    const dropped = dropSources(MEASUREMENT_SOURCES);
+    const html = dropped['index.html']
+      .replace('googletagmanager.com/gtag/js', 'googletagmanager.com/ns.html')
+      .replace('https://www.googletagmanager.com/gtm.js', lookalike);
+    assert.ok(html.includes(lookalike), `fixture assumption broken: ${lookalike} was not substituted in`);
+    return { ...dropped, 'index.html': html };
+  })(), 0);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

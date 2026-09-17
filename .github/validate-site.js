@@ -112,8 +112,25 @@ const measurementEndpoints = [
   ['https://www.google.com', 'Google signals posts /g/collect and /ccm/collect there'],
 ];
 // Gate on the tag actually being loaded, so removing analytics drops the
-// requirement instead of freezing it in.
-if (/googletagmanager\.com\/(?:gtag\/js|gtm\.js)/.test(indexHtml)) {
+// requirement instead of freezing it in. The loader URL is matched by parsed
+// host and path, not by a substring or a regex over the raw HTML: a pattern
+// like /googletagmanager\.com\/gtag\/js/ is unanchored at both ends, so both
+// `https://notgoogletagmanager.com/gtag/js` and any URL merely carrying that
+// text in a query string satisfy it. GTM's own loader builds its URL inline
+// rather than a src attribute, so this scans every URL in the file, not just
+// the ones the <script src> loop above can see.
+const TAG_HOST = 'www.googletagmanager.com';
+const TAG_PATHS = new Set(['/gtag/js', '/gtm.js']);
+const loadsTag = [...indexHtml.matchAll(/https:\/\/[^\s"'<>]+/g)].some(([reference]) => {
+  let url;
+  try {
+    url = new URL(reference);
+  } catch {
+    return false;
+  }
+  return url.host === TAG_HOST && TAG_PATHS.has(url.pathname);
+});
+if (loadsTag) {
   for (const [origin, why] of measurementEndpoints) {
     requireCsp('connect-src', origin, why);
   }
