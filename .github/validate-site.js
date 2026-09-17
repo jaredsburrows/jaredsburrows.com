@@ -700,11 +700,12 @@ for (let i = 0; i < rules.length; i += 1) {
 // can see a zone-level Cache Rule (README says so).
 const NEGOTIATED_PATH = '/';
 // Every header name that decides how long a copy of / may be reused, not just
-// the obvious one: Cloudflare reads CDN-Cache-Control for its own cache and
-// Cloudflare-CDN-Cache-Control ahead of both, and strips neither's answer into
-// the response a browser sees — so checking Cache-Control alone misses the two
-// spellings a Cloudflare-specific "how do I cache this?" reaches for, and
-// misses them invisibly (SECURITY.md S7).
+// the obvious one: Cloudflare reads CDN-Cache-Control for its own cache, and
+// Cloudflare-CDN-Cache-Control in preference to both. Neither is forwarded to
+// the client, so checking Cache-Control alone misses the two spellings a
+// Cloudflare-specific "how do I cache this?" reaches for — and misses them
+// invisibly, since a curl against production would not show them either
+// (SECURITY.md S7).
 const TTL_HEADERS = ['cache-control', 'cdn-cache-control', 'cloudflare-cdn-cache-control'];
 // Every directive that lets a shared cache answer from a stored copy instead of
 // revalidating through the Worker. stale-while-revalidate and stale-if-error do

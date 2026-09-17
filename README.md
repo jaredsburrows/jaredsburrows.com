@@ -89,13 +89,27 @@ are neither slowed down nor billed as Worker invocations.
 `/` must never be given a cache TTL. It has two representations on one URL, and
 Cloudflare's cache keys only on the URL and `Accept-Encoding` — it ignores
 `Vary` for every other request header, so a stored copy goes to every client
-whatever its `Accept` says. What keeps them apart today is that `/` is never
-stored: Workers Assets serves it `max-age=0, must-revalidate`, so every hit
-revalidates through the Worker. Adding a `Cache-Control` with a positive
-`max-age` or `s-maxage` for `/` to `_headers` — its own rule or any glob that
-matches it — would let one agent request leave the Markdown in the edge cache
-for every browser and Googlebot behind it. `validate-site.js` fails the build on
-that; `Vary: Accept` stays for downstream caches that do honour it.
+whatever its `Accept` says. What keeps them apart is that `/` is never stored:
+Workers Assets serves it `max-age=0, must-revalidate`, so every hit revalidates
+through the Worker. One agent request against a cacheable `/` would leave the
+Markdown in the edge cache for every browser and Googlebot behind it.
+
+Two things hold that down, because there are two ways in. The Worker pins
+`Cache-Control: public, max-age=0, must-revalidate` on the Markdown response:
+that response is `/index.md`'s headers republished under `/`, so without the pin
+a TTL on `/index.md` in `_headers` — which looks exactly as reasonable as the
+one on `/static/js/*` — would land on `/`. And `validate-site.js` fails the
+build on any `Cache-Control`, `CDN-Cache-Control`, `Cloudflare-CDN-Cache-Control`
+or `Expires` that gives `/` itself a TTL — `max-age`, `s-maxage`,
+`stale-while-revalidate` or `stale-if-error`, in `/`'s own rule or any glob that
+matches it. Neither control covers the other's route. `Vary: Accept` stays for
+downstream caches that do honour it.
+
+What neither can see is the zone: an Edge Cache TTL in a Cloudflare Cache Rule
+or Page Rule, "Cache Everything", or Browser Cache TTL all set a TTL for `/`
+from the dashboard, override the response headers above, and produce no diff for
+CI to fail on. If `/` is ever given a cache TTL, it has to be done there and
+noticed there.
 
 Wildcards never select Markdown: a browser ends its `Accept` with `*/*;q=0.8`
 and `curl` sends nothing but `*/*`, so matching one would hand ordinary
