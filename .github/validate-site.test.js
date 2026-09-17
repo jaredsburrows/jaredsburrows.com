@@ -704,5 +704,36 @@ testFiles('a robots.txt Agentmap of //jaredsburrows.com/.well-known/nope.json fa
   'robots.txt': originalRobots.replace(/^Agentmap:.*$/m, 'Agentmap: //jaredsburrows.com/.well-known/nope.json'),
 }, 1, 'robots.txt Agentmap references missing file /.well-known/nope.json');
 
+// --- S19: the HTML tokenizer ends script data at `</script` followed by a
+// space, tab, LF, FF, `/` or `>`, while the block match only stops at a
+// literal `</script>`. Every body below is valid JSON and was read in full —
+// and reported clean — while a browser or scraper stopped at the breakout and
+// parsed the rest as markup, into a page whose script-src is 'self'
+// 'unsafe-inline'. Nothing in the committed blocks is anywhere near this
+// today; the guard is what keeps the class closed as `description` and the
+// other free-prose fields get edited again.
+const addJsonLdField = (field) =>
+  mutateJsonLd((body) => body.replace(/("@type"\s*:)/, `${field},\n        $1`));
+assert.notStrictEqual(addJsonLdField('"x": 1'), originalIndexHtml,
+  'fixture assumption broken: the JSON-LD block has no @type to insert a field before');
+
+for (const [breakout, why] of [
+  ['</script  >', 'whitespace after the tag name ends it just as `>` does'],
+  ['</script/>', 'a slash ends it too'],
+  ['<!--', 'a comment opener moves the tokenizer into script-data-escaped state'],
+  ['-->', 'and a comment closer moves it back out'],
+]) {
+  testFiles(`a JSON-LD string containing ${breakout} fails closed (${why})`, {
+    'index.html': addJsonLdField(`"alternateName": "x${breakout}<script>alert(1)<\\/script>"`),
+  }, 1, 'index.html JSON-LD block 1 contains a sequence that ends the script element early');
+}
+
+// … and the escape the message tells the author to use has to actually pass,
+// or the guard just moves the problem: `<\/script` is the same string to JSON
+// and invisible to every HTML tokenizer.
+testFiles('a JSON-LD string with a correctly escaped <\\/script passes', {
+  'index.html': addJsonLdField('"alternateName": "x<\\/script><script>alert(1)<\\/script>"'),
+}, 0);
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

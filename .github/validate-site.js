@@ -348,10 +348,30 @@ const namesSchemaOrg = (context) => [context].flat().some((value) => {
     return false;
   }
 });
+// The block match below stops at a literal `</script>`, but the HTML tokenizer
+// ends script data at `</script` followed by a space, tab, LF, FF, `/` or `>`
+// — so a JSON string containing `</script  >` closes the element in every
+// browser and scraper while this file reads straight past it, parses the whole
+// body as valid JSON and reports nothing (S19). What follows the breakout
+// lands where `script-src 'self' 'unsafe-inline'` lets inline script run.
+// Rejecting the sequence is also what makes the simpler match EXACT rather
+// than merely tolerable: a body containing no `</script` + terminator ends
+// where the browser ends it, so the bytes validated here are the bytes
+// consumed there, and widening the regex instead would only have turned a
+// breakout into a confusing "not valid JSON" on a truncated body. `<!--` and
+// `-->` are rejected for the same reason — they move the tokenizer into
+// script-data-escaped state, where the same end tag stops ending the element.
+// Hand-written JSON-LD needs none of the three: `<\/script` is the same string
+// after JSON unescaping and no tokenizer can see it.
+const SCRIPT_BREAKOUT = /<\/script[\s/>]|<!--|-->/i;
 for (const [file, html] of [['index.html', indexHtml], ['404.html', notFoundHtml]]) {
   const blocks = [...html.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi)];
   blocks.forEach(([, body], index) => {
     const name = `${file} JSON-LD block ${index + 1}`;
+    if (SCRIPT_BREAKOUT.test(body)) {
+      bad(`${name} contains a sequence that ends the script element early — \`</script\` followed by whitespace, \`/\` or \`>\`, or an HTML comment marker — so a browser stops reading JSON there and parses the rest as markup; write \`<\\/script\` inside the JSON string instead, which unescapes to the same text`);
+      return;
+    }
     let data;
     try {
       data = JSON.parse(body);
