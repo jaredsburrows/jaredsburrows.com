@@ -623,5 +623,86 @@ testFiles('an og:image with a ../ traversal out of the repo fails closed', {
     `$1${TRAVERSAL}"`),
 }, 1, `index.html references missing file ${TRAVERSAL}`);
 
+// --- S18: which references are ours is decided by the parsed HOST, not by a
+// string prefix. `https://jaredsburrows.com/…` is one of several forms every
+// client resolves to this origin, and while the prefix test was right about
+// lookalikes it skipped all the others as "off-origin" — so the S11 rename
+// invariant could be switched back off by REWRITING a reference instead of
+// deleting it, which is the easier mistake of the two to make by accident: a
+// protocol-relative og:image is a normal thing to write. Every case below was
+// exit 0 before the fix, with the referenced file genuinely absent.
+const GONE = '/static/image/avatar-gone.jpg';
+const withOgImage = (value) =>
+  originalIndexHtml.replace(/(property="og:image" content=)"[^"]+"/, `$1"${value}"`);
+const withJsonLdImage = (value) =>
+  mutateJsonLd((body) => body.replace(/("image"\s*:\s*)"[^"]+"/, `$1"${value}"`));
+assert.notStrictEqual(withOgImage('x'), originalIndexHtml,
+  'fixture assumption broken: no og:image content attribute to rewrite');
+assert.notStrictEqual(withJsonLdImage('x'), originalIndexHtml,
+  'fixture assumption broken: the JSON-LD block has no image field to rewrite');
+
+// The third element is how the same origin has to be SPELLED inside a JSON
+// string, which differs only for the backslash form: `\` is an escape
+// character to JSON, so the block has to carry `\\` to mean the one backslash
+// a consumer then resolves.
+for (const [origin, why, jsonOrigin = origin] of [
+  ['//jaredsburrows.com', 'protocol-relative, which every scraper resolves against the page origin'],
+  ['http://jaredsburrows.com', 'the legacy scheme, which redirects here rather than going elsewhere'],
+  ['HTTPS://JaredsBurrows.COM', 'case variants, which no host comparison may be sensitive to'],
+  ['https://jaredsburrows.com:443', 'the default port spelled out, which is the same origin'],
+  ['https:/\\jaredsburrows.com', 'a backslash separator, which the URL parser normalises to /', 'https:/\\\\jaredsburrows.com'],
+]) {
+  testFiles(`an og:image of ${origin}${GONE} fails closed (${why})`,
+    { 'index.html': withOgImage(`${origin}${GONE}`) },
+    1, `index.html references missing file ${GONE}`);
+
+  testFiles(`a JSON-LD image of ${origin}${GONE} fails closed (${why})`,
+    { 'index.html': withJsonLdImage(`${jsonOrigin}${GONE}`) },
+    1, `index.html JSON-LD block 1 references missing file ${GONE}`);
+}
+
+// The other half, and the half a host check is easy to get wrong: none of
+// these is this origin, so none of them names a file in this tree and none may
+// be reported as missing. blog.jaredsburrows.com is in the block's sameAs list
+// today — a real subdomain served by something else entirely.
+for (const offOrigin of [
+  'https://jaredsburrows.com.evil.test',
+  'https://notjaredsburrows.com',
+  '//jaredsburrows.com.evil.test',
+  'https://blog.jaredsburrows.com',
+  'https://example.com',
+]) {
+  testFiles(`an og:image of ${offOrigin}${GONE} is not treated as a local file`,
+    { 'index.html': withOgImage(`${offOrigin}${GONE}`) }, 0);
+
+  testFiles(`a JSON-LD image of ${offOrigin}${GONE} is not treated as a local file`,
+    { 'index.html': withJsonLdImage(`${offOrigin}${GONE}`) }, 0);
+}
+
+// Prose in a content="" attribute must stay prose: parsing every value against
+// the site origin — rather than only the ones carrying an authority — would
+// turn the description, the viewport and the CSP mirror into file references
+// and fail the build on a sentence.
+testFiles('a description that starts with a word and a colon is still prose', {
+  'index.html': originalIndexHtml.replace(/(name="description" content=)"[^"]+"/,
+    '$1"Android: Kotlin, Gradle, and //100% coverage."'),
+}, 0);
+
+// The api-catalog hrefs ran the same string-prefix test and had the same blind
+// spot, so the single helper closes both. Same for the robots.txt Agentmap.
+testFiles('an api-catalog href of //jaredsburrows.com/api/nope.json fails closed', {
+  '.well-known/api-catalog': originalCatalog.replace(
+    'https://jaredsburrows.com/api/openapi.json', '//jaredsburrows.com/api/nope.json'),
+}, 1, '.well-known/api-catalog entry 1 references missing file /api/nope.json');
+
+testFiles('an api-catalog href on a lookalike host is not checked against this tree', {
+  '.well-known/api-catalog': originalCatalog.replace(
+    'https://jaredsburrows.com/api/openapi.json', 'https://jaredsburrows.com.evil.test/api/nope.json'),
+}, 0);
+
+testFiles('a robots.txt Agentmap of //jaredsburrows.com/.well-known/nope.json fails closed', {
+  'robots.txt': originalRobots.replace(/^Agentmap:.*$/m, 'Agentmap: //jaredsburrows.com/.well-known/nope.json'),
+}, 1, 'robots.txt Agentmap references missing file /.well-known/nope.json');
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

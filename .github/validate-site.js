@@ -257,8 +257,46 @@ const checkLocal = (source, reference) => {
 // (.team/SECURITY.md S11). With image TTLs at 30 days and Cloudflare purge
 // unable to reach a browser cache, the rename IS the cache-bust — so every
 // reference to a renamed asset has to move in the same commit.
-const sameOriginPath = (reference) =>
-  (reference.startsWith(`${SITE_ORIGIN}/`) ? reference.slice(SITE_ORIGIN.length) : undefined);
+//
+// Which references are ours is decided by the PARSED host, never by a string
+// prefix (S18). `https://jaredsburrows.com/…` is only one of the forms every
+// client resolves to this origin: `//jaredsburrows.com/…` (protocol-relative,
+// and an ordinary thing to write in an og:image), `http://…`,
+// `HTTPS://JaredsBurrows.COM/…` and the default-port `…:443/…` all land here
+// too, and a prefix test skips every one of them as "off-origin" — so the S11
+// rename invariant could be switched back off by REWRITING a reference rather
+// than deleting it. Host equality keeps out the lookalikes the trailing slash
+// used to handle: jaredsburrows.com.evil.test and notjaredsburrows.com are
+// different hosts and stay off-origin, and so does blog.jaredsburrows.com,
+// a real subdomain this repo does not serve. Only the one host this tree is
+// deployed to belongs in the set; adding another has to be a deliberate edit.
+const SITE_HOSTS = new Set([new URL(SITE_ORIGIN).host]);
+// Only a value carrying an authority (`scheme://host` or `//host`) can be a
+// same-origin ABSOLUTE reference. Relative values are the callers' business,
+// and resolving them here would turn prose like
+// content="width=device-width, initial-scale=1" into a file reference.
+// Backslashes count as separators because the URL parser treats them as such
+// for http(s): `https:/\jaredsburrows.com/x` loads this origin in a browser.
+const AUTHORITY = /^(?:[a-z][a-z0-9+.-]*:)?[\\/]{2}[^\\/?#]*/i;
+const sameOriginPath = (reference) => {
+  const authority = reference.match(AUTHORITY);
+  if (!authority) return undefined;
+  let url;
+  try {
+    url = new URL(reference, `${SITE_ORIGIN}/`);
+  } catch {
+    return undefined;
+  }
+  if (!SITE_HOSTS.has(url.host) || !['http:', 'https:'].includes(url.protocol)) return undefined;
+  // What follows the authority is handed on AS WRITTEN, not as the parser
+  // normalized it, so checkLocal reports the reference the author typed and
+  // still runs its own resolution and containment check over it (S12).
+  const rest = reference.slice(authority[0].length);
+  // A remainder starting with two separators would re-parse as another
+  // authority instead of a path, so that one shape passes the whole reference
+  // on and checkLocal resolves it as the absolute URL it already is.
+  return /^[\\/]{2}/.test(rest) ? reference : (rest || '/');
+};
 // Walks parsed data (JSON-LD, any object or array) for the same absolute URLs.
 const checkSameOriginUrls = (source, value) => {
   if (typeof value === 'string') {
