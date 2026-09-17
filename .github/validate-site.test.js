@@ -497,6 +497,13 @@ testFiles('a manifest that is not valid JSON fails closed',
   { [AI_CATALOG]: originalAiCatalog.replace('"entries": [', '"entries": [,') },
   1, `${AI_CATALOG} is not valid JSON`);
 
+// One well-known path missing entirely (not just malformed) is its own
+// failure mode — the read() call throws before JSON.parse ever runs — and
+// nothing above exercises it.
+testFiles('one manifest copy missing entirely fails closed',
+  { [ARD]: null },
+  1, `${ARD} is missing — the ARD manifest is published at both well-known paths`);
+
 // The truthfulness gate, mechanised: renaming or deleting an advertised file
 // must not leave the manifest pointing at a 404. Both copies are mutated so the
 // byte-equality check stays quiet and the URL check is what fires.
