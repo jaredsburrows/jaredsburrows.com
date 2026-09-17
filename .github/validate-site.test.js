@@ -63,7 +63,9 @@ for (const source of [...MEASUREMENT_SOURCES, ...EDGE_INJECTED_SOURCES]) {
 let passed = 0;
 let failed = 0;
 
-// `overrides` maps a repo-relative path to the content to write over its copy.
+// `overrides` maps a repo-relative path to the content to write over its copy,
+// or to `null` to delete it — a missing file is its own failure mode, and
+// writing empty content does not exercise it.
 const runValidator = (overrides) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'validate-site-test-'));
   try {
@@ -72,7 +74,8 @@ const runValidator = (overrides) => {
       fs.cpSync(path.join(repoRoot, name), path.join(tmp, name), { recursive: true });
     }
     for (const [name, content] of Object.entries(overrides)) {
-      fs.writeFileSync(path.join(tmp, name), content);
+      if (content === null) fs.rmSync(path.join(tmp, name), { force: true });
+      else fs.writeFileSync(path.join(tmp, name), content);
     }
     try {
       const stdout = execFileSync('node', [validator, tmp], { encoding: 'utf8' });
@@ -332,6 +335,31 @@ testFiles('an openapi.json path with no file behind it fails closed', {
   'api/openapi.json': fs.readFileSync(path.join(repoRoot, 'api/openapi.json'), 'utf8')
     .replace('"/api/health.json"', '"/api/status.json"'),
 }, 1, 'openapi.json describes /api/status.json');
+// --- /auth.md discovery: agent tooling locates the document by fetching
+// /auth.md and matching an H1 that contains "auth.md". Both halves are load-
+// bearing and neither is visible to any other check: deleting the file leaves
+// a 404 that no test notices, and retitling the heading to something like
+// "# Authentication" keeps a file that reads fine to a human while silently
+// failing discovery. Nothing else in the build would go red either way.
+const originalAuthMd = fs.readFileSync(path.join(repoRoot, 'auth.md'), 'utf8');
+assert.ok(/^#\s+.*auth\.md/im.test(originalAuthMd),
+  'fixture assumption broken: auth.md no longer has an H1 containing "auth.md"');
+
+testFiles('a missing auth.md fails closed', { 'auth.md': null }, 1, 'auth.md is missing');
+
+testFiles('auth.md retitled to a heading without "auth.md" fails closed',
+  { 'auth.md': originalAuthMd.replace(/^#\s+.*$/m, '# Authentication') },
+  1, 'H1 heading containing "auth.md"');
+
+// Demoting the heading breaks discovery just as surely as renaming it: the
+// document must be found by an H1, not by any heading that mentions the name.
+testFiles('auth.md with the name only in an H2 fails closed',
+  { 'auth.md': originalAuthMd.replace(/^#\s+(.*)$/m, '## $1') },
+  1, 'H1 heading containing "auth.md"');
+
+// "contains" is the requirement, not equality — a titled variant must pass.
+testFiles('auth.md with a titled H1 containing the name passes',
+  { 'auth.md': originalAuthMd.replace(/^#\s+.*$/m, "# Jared Burrows' auth.md") }, 0);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);
