@@ -378,12 +378,26 @@ const namesSchemaOrg = (context) => [context].flat().some((value) => {
 // than merely tolerable: a body containing no `</script` + terminator ends
 // where the browser ends it, so the bytes validated here are the bytes
 // consumed there, and widening the regex instead would only have turned a
-// breakout into a confusing "not valid JSON" on a truncated body. `<!--` and
-// `-->` are rejected for the same reason — they move the tokenizer into
-// script-data-escaped state, where the same end tag stops ending the element.
-// Hand-written JSON-LD needs none of the three: `<\/script` is the same string
+// breakout into a confusing "not valid JSON" on a truncated body.
+//
+// The comment markers are rejected for related reasons, and each is a distinct
+// tokenizer state rather than one rule repeated:
+// - `<!--` is the only entry into script-data-escaped state, and from there a
+//   nested `<script` reaches script-data-DOUBLE-escaped state, where
+//   `</script>` stops ending the element at all. Rejecting the entry closes
+//   that whole family, including the abrupt-close forms `<!-->` and `<!--->`,
+//   which contain it.
+// - `-->` leaves script-data-escaped state again (escaped-dash-dash, then
+//   `>`), and ends an HTML comment.
+// - `--!>` does NOT leave script data escaped state — `!` is "anything else"
+//   there — but the comment-end-BANG state makes it a comment terminator just
+//   like `-->`, and these blocks are written BETWEEN HTML comments. A filter
+//   that knows only `-->` is incomplete about the comment family in precisely
+//   the way this guard exists to stop being incomplete about the script family
+//   (CodeQL js/bad-tag-filter, alert 8 on PR #147).
+// Hand-written JSON-LD needs none of them: `<\/script` is the same string
 // after JSON unescaping and no tokenizer can see it.
-const SCRIPT_BREAKOUT = /<\/script[\s/>]|<!--|-->/i;
+const SCRIPT_BREAKOUT = /<\/script[\s/>]|<!--|--!?>/i;
 for (const [file, html] of [['index.html', indexHtml], ['404.html', notFoundHtml]]) {
   const blocks = [...html.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi)];
   blocks.forEach(([, body], index) => {

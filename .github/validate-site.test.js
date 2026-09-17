@@ -719,11 +719,21 @@ const addJsonLdField = (field) =>
 assert.notStrictEqual(addJsonLdField('"x": 1'), originalIndexHtml,
   'fixture assumption broken: the JSON-LD block has no @type to insert a field before');
 
+// The comment family needs more than `-->`: the tokenizer has a
+// comment-end-BANG state, so `--!>` closes a comment too, and the abrupt-close
+// forms `<!-->` and `<!--->` are whole comments in themselves. A guard that
+// knew only `-->` was incomplete in exactly the way S19 is about (CodeQL
+// js/bad-tag-filter, alert 8 on PR #147) — these blocks sit BETWEEN HTML
+// comments, so a body carrying one of these ends a construct a reader thinks
+// encloses it.
 for (const [breakout, why] of [
   ['</script  >', 'whitespace after the tag name ends it just as `>` does'],
   ['</script/>', 'a slash ends it too'],
   ['<!--', 'a comment opener moves the tokenizer into script-data-escaped state'],
   ['-->', 'and a comment closer moves it back out'],
+  ['--!>', 'the comment-end-bang state ends a comment on --!> as surely as on -->'],
+  ['<!-->', 'an abrupt-closed empty comment, caught by the <!-- branch'],
+  ['<!--->', 'the same with the dash the comment-start-dash state swallows'],
 ]) {
   testFiles(`a JSON-LD string containing ${breakout} fails closed (${why})`, {
     'index.html': addJsonLdField(`"alternateName": "x${breakout}<script>alert(1)<\\/script>"`),
