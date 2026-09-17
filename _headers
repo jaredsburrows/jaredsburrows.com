@@ -1,5 +1,6 @@
 # Consumed by Cloudflare (not served); index.html mirrors the CSP as a meta tag
-# for the GitHub Pages mirror, which cannot send headers. Never set a header on
+# so local previews get it too (`python3 -m http.server`, file://), and
+# validate-site.js holds the two in sync. Never set a header on
 # /* that another matching rule also sets — values from all matching rules join.
 /*
   X-Content-Type-Options: nosniff
