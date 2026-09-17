@@ -21,9 +21,31 @@
     // would put every request for every asset through a billed invocation.
     "run_worker_first": ["/"]
   },
+  // Observability on, as #139 set it. Both switches have to say so: wrangler's
+  // normalizeObservability only fills fields that are `undefined` and the deploy
+  // payload carries this block verbatim, so a nested "logs.enabled" that
+  // disagrees with the "enabled" above it ships silently for a Worker (for
+  // containers wrangler rejects the same mismatch outright — '"enabled" and
+  // "logs.enabled" cannot be set to different values'). Leaving the two at odds
+  // is the bug, in whichever direction; they agree here.
+  //
+  // What changed under this setting: #139 turned it on while this was an
+  // assets-only Worker with no "main", so there were no invocations to log and
+  // the Observability view could only stay empty — it was ready for a script
+  // that did not exist. This PR is that script. From here / is an invocation,
+  // so Workers Logs holds a record of every homepage request, sampled at 1,
+  // for as long as the plan retains it and readable by anyone with dashboard
+  // access. That is now a live data-collection choice rather than a dormant
+  // one; set both switches to false if the record is not wanted.
+  //
+  // redact_query_string keeps the logged URL down to its path. It defaults to
+  // false — the full request URL — and / is the one path this site publishes
+  // everywhere, so it collects whatever utm_*, click ID or referrer junk gets
+  // appended to a link to the homepage.
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1,
+    "redact_query_string": true,
     "logs": {
       "enabled": true,
       "head_sampling_rate": 1,
