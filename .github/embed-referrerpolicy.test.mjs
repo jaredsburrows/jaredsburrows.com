@@ -98,10 +98,21 @@ const mount = async () => {
   const served = [];
   const intercept = requestInterceptor((request) => {
     if (request.url.startsWith(`${SITE_ORIGIN}/`)) {
-      const file = path.join(root, new URL(request.url).pathname.replace(/^\/+/, ''));
-      if (fs.existsSync(file) && fs.statSync(file).isFile()) {
-        served.push(new URL(request.url).pathname);
-        return new Response(fs.readFileSync(file), {
+      const { pathname } = new URL(request.url);
+      const file = path.join(root, pathname.replace(/^\/+/, ''));
+      // Read and handle the failure, rather than testing for the file and then
+      // reading it: that is two syscalls against a path that can change in
+      // between, and readFileSync already reports everything the test needs --
+      // ENOENT for a path the tree does not have, EISDIR for a directory.
+      let body = null;
+      try {
+        body = fs.readFileSync(file);
+      } catch {
+        body = null;
+      }
+      if (body !== null) {
+        served.push(pathname);
+        return new Response(body, {
           headers: { 'Content-Type': CONTENT_TYPES.get(path.extname(file)) ?? 'application/octet-stream' },
         });
       }
