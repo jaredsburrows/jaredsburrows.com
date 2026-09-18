@@ -315,6 +315,11 @@ nav .ar {
 footer {
   display: flex;
   flex-wrap: wrap;
+  /* space-between rather than margin-left: auto on .yr. Once the two halves
+     wrap onto separate lines the auto margin still pushes the year to the right
+     edge of its own line, which reads as a stray right-aligned scrap;
+     space-between leaves a lone item at the line start. */
+  justify-content: space-between;
   gap: 18px;
   font-size: 13px;
   color: var(--faint);
@@ -330,11 +335,21 @@ footer a {
   border-bottom: 1px solid var(--link-underline);
 }
 
-footer .yr {
-  margin-left: auto;
-}
-
 @media (max-width: 560px) {
+  /* The row needs 517px and a 375px phone gives it 311px, so it wrapped
+     mid-list and left a separator dangling at the end of a line: "email me ·
+     506 followers on GitHub ·". One item per line, and there is nothing for a
+     separator to fall between. */
+  .meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .meta .dot {
+    display: none;
+  }
+
   nav a {
     grid-template-columns: 1fr auto;
   }
