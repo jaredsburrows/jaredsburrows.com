@@ -275,7 +275,11 @@ Added to `.github/validate-site.js`, with cases in
    `application/mcp-server-card+json`.
 7. `_headers` sets the expected `Content-Type` and `Access-Control-Allow-Origin`
    on every new path, and adds no rule that collides with `/*` — the file's
-   existing rule that two matching rules would comma-join their values.
+   existing rule that two matching rules would comma-join their values. The
+   card paths additionally must have a `Content-Type` rule at all: an
+   extensionless asset is otherwise served with none (measured below), and
+   `_redirects` must contain no rule matching `/mcp`, which would shadow the
+   endpoint since redirects fire ahead of the Worker.
 8. `webmcp.js` is referenced from `index.html`, and the element ids it looks up
    exist there — the same HTML/JS contract already enforced for `home.js`.
 
@@ -354,20 +358,37 @@ Coverage, one case per normative rule:
 Then the full existing suite: `src/worker.test.mjs`,
 `.github/validate-site.test.js`, `.github/validate-talks.js`.
 
-Finally `wrangler dev`, to check two assumptions this design makes rather than
-trusting them:
+### Routing, measured
 
-1. `run_worker_first: ["/mcp"]` is an exact match, so `/mcp/server-card` is still
-   served by the asset router without invoking the Worker.
-2. A repository directory named `mcp/` does not cause the asset router to
-   redirect `/mcp` to `/mcp/` before the Worker sees it. `run_worker_first`
-   should pre-empt `html_handling: auto-trailing-slash` for that path, but a
-   redirect here would break every client, so it is verified directly.
+The routing assumptions were checked under `wrangler dev` (wrangler 4.134.0)
+before any protocol code was written, using a throwaway probe: `run_worker_first:
+["/", "/mcp"]`, a stub `mcp/server-card` asset, and a Worker branch returning a
+marker for `/mcp`. All four results held, and the probe was reverted.
 
-If assumption 2 fails, the fallback is to move the canonical card to a directory
-that does not collide (serving it from the Worker at `/mcp/server-card`), not to
-move the MCP endpoint — the endpoint path is what the card and the catalog
-advertise.
+| Probe | Result |
+| --- | --- |
+| `POST /mcp` | `200`, Worker marker, **no redirect** |
+| `GET /mcp` | `200`, Worker marker, **no redirect** |
+| `GET /mcp/server-card` | the asset, with `ETag` and `CF-Cache-Status: HIT` and no Worker marker — the asset router served it |
+| `GET /` and `GET /` with `Accept: text/markdown` | unchanged: `text/html` and `text/markdown` respectively, both `Vary: Accept` |
+
+So `run_worker_first` is exact-match — `/mcp` does not capture `/mcp/server-card`
+— and a repository directory named `mcp/` does not make the asset router redirect
+`/mcp` to `/mcp/` before the Worker sees it. The fallback of serving the
+canonical card from the Worker is not needed.
+
+Two further findings from the same probe:
+
+- The extensionless `mcp/server-card` asset is served with **no `Content-Type` at
+  all** unless `_headers` supplies one. The `_headers` rule is load-bearing, not
+  cosmetic, and a missing rule fails open (no type) rather than closed.
+- A `_headers` rule on `/mcp/server-card` does apply `Content-Type:
+  application/mcp-server-card+json` and `Access-Control-Allow-Origin: *` to that
+  path, confirmed in the response.
+
+`_redirects` contains no rule matching `/mcp` or `/.well-known/*`, so nothing
+pre-empts the route. Redirects fire ahead of asset serving, so a future redirect
+rule on `/mcp` would shadow the endpoint; invariant 7 should cover that.
 
 ## Operational notes
 
