@@ -6,7 +6,7 @@ My blog, presentations, GitHub, and social links.
 [![Build](https://github.com/jaredsburrows/jaredsburrows.com/workflows/build/badge.svg)](https://github.com/jaredsburrows/jaredsburrows.com/actions)
 [![Twitter Follow](https://img.shields.io/twitter/follow/jaredsburrows.svg?style=social)](https://twitter.com/jaredsburrows)
 
-Personal website — fully static, no build step. Cloudflare Workers serves the repo as-is from its edge.
+Personal website — no build step. Cloudflare Workers serves the repo as-is from its edge; one route, `/`, also runs `src/worker.mjs` (see "The Worker").
 
 ### Preview the website
 
