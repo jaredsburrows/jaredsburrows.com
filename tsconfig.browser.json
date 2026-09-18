@@ -1,0 +1,25 @@
+// Type checking for the two scripts the browser actually downloads.
+//
+// These ship byte-for-byte out of the asset directory -- they are not bundled,
+// minified or transpiled -- so this config only reads them. `types: []` keeps
+// Node's globals out: code here that reaches for `process` or `require` is a
+// bug, and this is what makes it one.
+{
+  "compilerOptions": {
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": true,
+    "strict": true,
+
+    // Classic <script src> files, not modules: "preserve" leaves them as the
+    // global scripts they are. index.html loads them with
+    // `defer` and talks.js hands data to home.js over `window`.
+    "module": "preserve",
+    "target": "es2022",
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "types": [],
+
+    "skipLibCheck": true
+  },
+  "include": ["static/js/**/*.js", "types/*.d.ts"]
+}

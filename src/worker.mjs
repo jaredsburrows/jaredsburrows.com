@@ -157,7 +157,10 @@ function effectiveQuality(entries, type) {
   // Math.max would read a refusal as 0, which is the unsafe direction here: an
   // ambiguous text/html must not lower the bar markdown has to clear.
   if (qualities.includes(null)) return null;
-  return Math.max(...qualities);
+  // `includes` is not a narrowing form, so the cast is what carries the fact
+  // the line above just established -- that no null survives here -- to the
+  // type checker. It erases to nothing; `qualities` is untouched at runtime.
+  return Math.max(.../** @type {number[]} */ (qualities));
 }
 
 /**
