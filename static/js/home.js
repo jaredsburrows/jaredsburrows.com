@@ -87,11 +87,12 @@
     // `allow` omits fullscreen; both players use it, so both lists keep it.
     frame.setAttribute('allow', allow);
     frame.setAttribute('allowfullscreen', '');
-    // Not redundant with the _headers Referrer-Policy: it works around an
-    // unfixed Cloudflare zone rule (an open defect, see .team/SECURITY.md)
-    // that rewrites the document policy to same-origin, stripping the referer
-    // cross-origin and leaving YouTube's player at Error 153. Keep it — the
-    // attribute overrides the document policy for these requests.
+    // Not redundant with the _headers Referrer-Policy: that one belongs to the
+    // document, and a Cloudflare zone rule rewrote it to same-origin in
+    // September 2026, stripping the referer cross-origin and leaving YouTube's
+    // player at Error 153. The rule is fixed, but the attribute pins the policy
+    // to the frames themselves, so no later change to the document policy — a
+    // zone setting, a _headers edit — can take their referer away again.
     frame.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
     return frame;
   };
