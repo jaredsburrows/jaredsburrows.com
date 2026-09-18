@@ -4,11 +4,13 @@
 
 **Goal:** Serve a real Model Context Protocol server at `POST /mcp` over the three conference talks, and publish a truthful server card that advertises it.
 
-**Architecture:** A new `src/mcp.mjs` holds the whole protocol, exporting pure helpers plus one `handleMcp(request, env)` entry point; `src/worker.mjs` routes `/mcp` to it and is otherwise untouched. The card is three byte-identical static files — no Worker involvement — discovered through the ARD/AI-Catalog manifest the site already publishes. Six CI invariants in `.github/validate-site.js` pin the card to the server so neither can drift.
+**Architecture:** A new `src/mcp.mts` holds the whole protocol, exporting pure helpers plus one `handleMcp(request, env)` entry point; `src/worker.mts` routes `/mcp` to it and is otherwise untouched. The card is three byte-identical static files — no Worker involvement — discovered through the ARD/AI-Catalog manifest the site already publishes. Six CI invariants in `.github/validate-site.js` pin the card to the server so neither can drift.
 
-**Tech Stack:** JavaScript ES modules (`.mjs`, JSDoc-annotated — no TypeScript, no build step, no `package.json`), Cloudflare Workers Assets, `node:test` for unit tests, Wrangler 4.x.
+**Tech Stack:** TypeScript ES modules (`.mts`, type-checked by `tsc --noEmit` under `strict`; Node strips types in place and Wrangler bundles with esbuild — there is still no build step and nothing is emitted), Cloudflare Workers Assets, `node:test` for unit tests, Wrangler 4.x.
 
 **Spec:** `docs/superpowers/specs/2026-09-17-mcp-agent-discovery-design.md`
+
+**Verified:** the TypeScript in Tasks 1–4 was extracted from this document verbatim, assembled into `src/mcp.mts` and `src/mcp.test.mts`, and run before this plan was committed: `tsc -p tsconfig.json --noEmit` is clean under `strict`, and `node --test` reports **42 passing, 0 failing**. The probe files were then deleted, so the tasks below still build them the TDD way — but the code in them is known to compile and pass, not merely believed to. If a step fails as written, suspect the surrounding repo changed rather than the snippet.
 
 ## Global Constraints
 
@@ -20,8 +22,10 @@
 - **MCP error codes:** `-32700` parse, `-32600` invalid request, `-32601` method not found, `-32602` invalid params, `-32603` internal, `-32020` HeaderMismatch, `-32022` UnsupportedProtocolVersion. Never emit an undefined code in `-32020`..`-32099`.
 - **Every result MUST carry `resultType: "complete"`** and SHOULD carry `_meta["io.modelcontextprotocol/serverInfo"]`.
 - **Every client request MUST carry** `_meta["io.modelcontextprotocol/protocolVersion"]` *and* `_meta["io.modelcontextprotocol/clientCapabilities"]`. Either missing is `-32602` with HTTP `400`.
-- **Style:** match the existing repo voice — JSDoc on exports, and comments that explain *why* a rule exists and what breaks without it, not what the line does. Error strings name the consequence.
-- **No `package.json`, no lockfile, no dependencies.** Anything importable must run under plain `node --test`.
+- **Style:** match the existing repo voice — comments that explain *why* a rule exists and what breaks without it, not what the line does. Error strings name the consequence. Types carry the shapes; a doc comment says the reasoning, not the signature.
+- **TypeScript, `strict`, `noEmit`.** `tsconfig.json` includes `src/**/*` *and* `.github/**/*.js` with `checkJs`, so the validator code added in Task 8 must type-check too, not merely run. `npm run typecheck` is a CI gate.
+- **Extensions are `.mts`, not `.ts`.** `package.json` declares `"type": "commonjs"` (it must — the `.github` validators use `require()`), and under that Node reads a `.ts` file as CommonJS, where `export default` throws on load. Imports name the real filename (`./mcp.mts`) because `allowImportingTsExtensions` is set and Node opens the literal path.
+- **A global `Talk` interface already exists** in `types/talks.d.ts` — use it rather than declaring a second shape for the same data.
 - **Commits:** no "Generated with Claude Code" trailer, no Claude co-author. Signing stays on; never pass `-c commit.gpgsign=false`.
 - **Link formats** (must match `static/js/home.js` and `index.md` exactly): slides `https://speakerdeck.com/player/{id}`, video `https://www.youtube.com/watch?v={id}`.
 
@@ -32,8 +36,8 @@
 Two talks share the title "The Road to Single Dex", so `title` cannot key a lookup. Every talk gets `{date}-{slug(title)}`.
 
 **Files:**
-- Create: `src/mcp.mjs`
-- Create: `src/mcp.test.mjs`
+- Create: `src/mcp.mts`
+- Create: `src/mcp.test.mts`
 
 **Interfaces:**
 - Consumes: nothing.
@@ -41,19 +45,31 @@ Two talks share the title "The Road to Single Dex", so `title` cannot key a look
 
 - [ ] **Step 1: Write the failing test**
 
-Create `src/mcp.test.mjs`:
+Create `src/mcp.test.mts`:
 
-```js
-// Unit tests for src/mcp.mjs — the MCP server at POST /mcp. A deploy cannot tell
+```ts
+// Unit tests for src/mcp.mts — the MCP server at POST /mcp. A deploy cannot tell
 // you any of this is right: the endpoint answers only machines, and a protocol
 // mistake looks exactly like a working site. The cases below are the contract.
 //
-// Run: node --test src/mcp.test.mjs
+// Run: node --test src/mcp.test.mts
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { talkId, loadTalks, PROTOCOL_VERSION, SERVER_NAME, SERVER_VERSION } from './mcp.mjs';
+import { talkId, loadTalks, PROTOCOL_VERSION, SERVER_NAME, SERVER_VERSION } from './mcp.mts';
+
+/**
+ * A protocol payload, as a test reads one.
+ *
+ * The server types these precisely — `Dispatched`, `ToolResult`, `unknown` off
+ * the wire — because it must not assume what it was handed. A test is the other
+ * side of that: it knows exactly which message it just sent and what should come
+ * back, so every member read is deliberate. This alias holds the one `any` that
+ * buys it, in one named place, rather than scattering thirty casts through the
+ * assertions and burying what each one is actually checking.
+ */
+type Payload = Record<string, any>;
 
 const TALKS = [
   { date: '2017-11-08', title: 'The Road to Single Dex', where: 'GDG SF Meetup',
@@ -113,16 +129,16 @@ test('loadTalks returns the talks array from the asset', async () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node --test src/mcp.test.mjs`
-Expected: FAIL — `Cannot find module './mcp.mjs'`.
+Run: `node --test src/mcp.test.mts`
+Expected: FAIL — `Cannot find module './mcp.mts'`.
 
 - [ ] **Step 3: Write minimal implementation**
 
-Create `src/mcp.mjs`:
+Create `src/mcp.mts`:
 
-```js
+```ts
 // The Model Context Protocol server at POST /mcp — the second route this site
-// runs code on, after the markdown negotiation in worker.mjs.
+// runs code on, after the markdown negotiation in worker.mts.
 //
 // It implements protocol revision 2026-07-28 and only that revision. That is a
 // deliberate narrowing, not an omission: clients speaking the handshake-based
@@ -136,11 +152,13 @@ Create `src/mcp.mjs`:
 // capabilities in `params._meta`, which is exactly what a Worker wants — there
 // is nothing to keep between invocations.
 //
-// Like worker.mjs this is JSDoc-annotated JavaScript rather than TypeScript
-// (no package.json, no tsconfig, so a .ts file would be bundled but checked by
-// nothing), and .mjs so `node --test src/mcp.test.mjs` can import it directly.
-// Nothing here imports a `cloudflare:` module or touches global state at load
-// time, so running it outside workerd is safe.
+// The extension is .mts, not .ts, for the same reason worker.mts gives:
+// package.json says "type": "commonjs" (it must — the .github validators are
+// CommonJS), and under that Node reads a .ts file as CommonJS, where the
+// exports below would not load as ESM. Nothing is compiled: tsconfig.json is
+// noEmit, Wrangler bundles this with esbuild, and Node runs the test beside it
+// by stripping the types. Nothing here imports a `cloudflare:` module or
+// touches global state at load time, so running it outside workerd is safe.
 
 /** The only protocol revision this server implements. */
 export const PROTOCOL_VERSION = '2026-07-28';
@@ -154,17 +172,17 @@ export const SERVER_VERSION = '1.0.0';
 /** The dataset, read through the asset binding so there is only ever one copy. */
 const TALKS_ASSET = '/api/talks.json';
 
+/** What identifying a talk needs: `Talk` satisfies it, and so does a test fixture. */
+type Identifiable = Pick<Talk, 'date' | 'title'>;
+
 /**
  * A talk's stable identifier: its date, then a slug of its title.
  *
  * The date is not decoration. Two of the three talks are both called "The Road
  * to Single Dex" — the same talk given at two events — so a title-keyed id
  * would collide and `get_talk` would be unable to return the second one at all.
- *
- * @param {{ date: string, title: string }} talk
- * @returns {string}
  */
-export function talkId(talk) {
+export function talkId(talk: Identifiable): string {
   const slug = talk.title
     .toLowerCase()
     .normalize('NFKD')
@@ -175,32 +193,44 @@ export function talkId(talk) {
 }
 
 /**
+ * The asset binding, in the shape worker.mts already declares it.
+ *
+ * Declared here rather than imported so this module stays independent of the
+ * negotiation code next door: the two share an environment, not a dependency.
+ */
+export interface Env {
+  ASSETS: { fetch: (input: Request | URL | string) => Promise<Response> };
+}
+
+/**
  * The talks, read from the asset router rather than duplicated here.
  *
  * api/talks.json is already the copy the REST API serves and is already pinned
  * to static/js/talks.js by validate-site.js. Reading it means the MCP server
  * cannot disagree with the homepage about what talks exist.
- *
- * @param {{ ASSETS: { fetch: (input: Request | URL | string) => Promise<Response> } }} env
- * @returns {Promise<object[]>}
  */
-export async function loadTalks(env) {
+export async function loadTalks(env: Env): Promise<Talk[]> {
   const response = await env.ASSETS.fetch(new URL(TALKS_ASSET, 'https://jaredsburrows.com'));
   if (!response.ok) throw new Error(`${TALKS_ASSET} is unavailable (${response.status})`);
-  const data = await response.json();
-  return Array.isArray(data?.talks) ? data.talks : [];
+  // `json()` is typed `Promise<unknown>`, so the shape is asserted once, here,
+  // rather than re-asserted at every use. validate-talks.js is what actually
+  // holds api/talks.json to this shape at CI time.
+  const data = (await response.json()) as { talks?: Talk[] };
+  return Array.isArray(data.talks) ? data.talks : [];
 }
 ```
 
+`Talk` is a global from `types/talks.d.ts`, already in the `tsconfig.json` `include` — no import needed, and no second declaration of the same shape.
+
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `node --test src/mcp.test.mjs`
+Run: `node --test src/mcp.test.mts`
 Expected: PASS, 4 tests.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/mcp.mjs src/mcp.test.mjs
+git add src/mcp.mts src/mcp.test.mts
 git commit -m "feat(mcp): stable talk ids and dataset loading"
 ```
 
@@ -209,8 +239,8 @@ git commit -m "feat(mcp): stable talk ids and dataset loading"
 ### Task 2: Tool definitions and execution
 
 **Files:**
-- Modify: `src/mcp.mjs`
-- Modify: `src/mcp.test.mjs`
+- Modify: `src/mcp.mts`
+- Modify: `src/mcp.test.mts`
 
 **Interfaces:**
 - Consumes: `talkId`, `loadTalks` from Task 1.
@@ -218,9 +248,23 @@ git commit -m "feat(mcp): stable talk ids and dataset loading"
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `src/mcp.test.mjs` (add `TOOLS`, `callTool`, `talkSummary` to the existing import from `./mcp.mjs`):
+Append to `src/mcp.test.mts`, adding `TOOLS`, `callTool`, `talkSummary` to the existing value import from `./mcp.mts` and a type import beside it:
 
-```js
+```ts
+import type { ToolResult, TalkSummary, TalkDetail } from './mcp.mts';
+```
+
+```ts
+// `structuredContent` is typed Record<string, unknown> — the honest type for a
+// payload whose shape depends on which tool ran — so reading a member off it is
+// a type error until something narrows it. These two say which tool's answer a
+// given assertion expects, and a wrong guess fails the type check rather than
+// the assertion, which is the earlier and clearer failure.
+// `as unknown as` is required for the second: TypeScript refuses a direct cast
+// from Record<string, unknown> to an interface it shares no members with.
+const listed = (result: ToolResult) => result.structuredContent as { talks: TalkSummary[] };
+const detailed = (result: ToolResult) => result.structuredContent as unknown as TalkDetail;
+
 test('exactly two tools are exposed, and both are well-formed', () => {
   assert.deepEqual(TOOLS.map((tool) => tool.name), ['list_talks', 'get_talk']);
   for (const tool of TOOLS) {
@@ -248,30 +292,30 @@ test('talkSummary omits links a talk does not have', () => {
 test('list_talks returns every talk, newest first', async () => {
   const result = await callTool('list_talks', {}, stubAssets());
   assert.equal(result.isError, undefined);
-  assert.equal(result.structuredContent.talks.length, 3);
-  assert.equal(result.structuredContent.talks[0].date, '2017-11-08');
+  assert.equal(listed(result).talks.length, 3);
+  assert.equal(listed(result).talks[0].date, '2017-11-08');
 });
 
 test('list_talks filters by year', async () => {
   const result = await callTool('list_talks', { year: 2016 }, stubAssets());
-  assert.deepEqual(result.structuredContent.talks, []);
+  assert.deepEqual(listed(result).talks, []);
   const all = await callTool('list_talks', { year: 2017 }, stubAssets());
-  assert.equal(all.structuredContent.talks.length, 3);
+  assert.equal(listed(all).talks.length, 3);
 });
 
 test('get_talk returns the full record including the abstract', async () => {
   const result = await callTool('get_talk',
     { id: '2017-06-22-the-road-to-single-dex' }, stubAssets());
   assert.equal(result.isError, undefined);
-  assert.equal(result.structuredContent.where, 'Gradle Summit');
-  assert.deepEqual(result.structuredContent.description, ['Four.']);
+  assert.equal(detailed(result).where, 'Gradle Summit');
+  assert.deepEqual(detailed(result).description, ['Four.']);
 });
 
 test('get_talk distinguishes the two talks that share a title', async () => {
   const sf = await callTool('get_talk', { id: '2017-11-08-the-road-to-single-dex' }, stubAssets());
   const summit = await callTool('get_talk', { id: '2017-06-22-the-road-to-single-dex' }, stubAssets());
-  assert.equal(sf.structuredContent.where, 'GDG SF Meetup');
-  assert.equal(summit.structuredContent.where, 'Gradle Summit');
+  assert.equal(detailed(sf).where, 'GDG SF Meetup');
+  assert.equal(detailed(summit).where, 'Gradle Summit');
 });
 
 test('get_talk with an unknown id is a tool error, not a protocol error', async () => {
@@ -290,14 +334,39 @@ test('an unknown tool name is a tool error naming the real tools', async () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node --test src/mcp.test.mjs`
+Run: `node --test src/mcp.test.mts`
 Expected: FAIL — `TOOLS` / `callTool` / `talkSummary` are not exported.
 
 - [ ] **Step 3: Write minimal implementation**
 
-Append to `src/mcp.mjs`:
+Append to `src/mcp.mts`:
 
-```js
+```ts
+/**
+ * What a tool returns about a talk.
+ *
+ * Optional members are optional on purpose and never null: a talk with no video
+ * omits `video` entirely, so a consumer tests presence rather than emptiness.
+ * `link` is optional in `Talk` too, so it is optional here.
+ */
+export interface TalkSummary {
+  id: string;
+  date: string;
+  title: string;
+  where: string;
+  location?: string;
+  link?: string;
+  /** Speaker Deck player URL, built from the id. */
+  slides?: string;
+  /** YouTube watch URL, built from the id. */
+  video?: string;
+}
+
+/** A summary plus the abstract paragraphs; what `get_talk` returns. */
+export interface TalkDetail extends TalkSummary {
+  description: string[];
+}
+
 /**
  * The compact form of a talk: everything but the abstract.
  *
@@ -305,11 +374,8 @@ Append to `src/mcp.mjs`:
  * agent and a reader following the site get the identical URL. Absent ids are
  * omitted rather than set to null — an agent should not have to distinguish
  * "no video" from "video: null".
- *
- * @param {object} talk
- * @returns {object}
  */
-export function talkSummary(talk) {
+export function talkSummary(talk: Talk): TalkSummary {
   return {
     id: talkId(talk),
     date: talk.date,
@@ -322,13 +388,8 @@ export function talkSummary(talk) {
   };
 }
 
-/**
- * The full form: the summary plus the abstract paragraphs.
- *
- * @param {object} talk
- * @returns {object}
- */
-export function talkDetail(talk) {
+/** The full form: the summary plus the abstract paragraphs. */
+export function talkDetail(talk: Talk): TalkDetail {
   return { ...talkSummary(talk), description: talk.description ?? [] };
 }
 
@@ -369,18 +430,23 @@ export const TOOLS = [
   },
 ];
 
+/** What a tool call hands back, in the shape MCP defines for a tool result. */
+export interface ToolResult {
+  content: { type: 'text'; text: string }[];
+  structuredContent: Record<string, unknown>;
+  isError?: boolean;
+}
+
 /**
  * A tool result. `content` is what a model reads; `structuredContent` is the
  * same answer as data for a client that would rather parse than scrape.
- *
- * @param {object} structured
- * @param {boolean} [isError]
- * @returns {{ content: object[], structuredContent: object, isError?: boolean }}
  */
-const toolResult = (structured, isError) => ({
+const toolResult = (structured: object): ToolResult => ({
   content: [{ type: 'text', text: JSON.stringify(structured, null, 2) }],
-  structuredContent: structured,
-  ...(isError ? { isError: true } : {}),
+  // An interface has no index signature, so `TalkDetail` is not assignable to
+  // `Record<string, unknown>` without this. The cast is here, once, rather than
+  // at each call site — and `object` above still refuses a string or a number.
+  structuredContent: structured as Record<string, unknown>,
 });
 
 /**
@@ -390,11 +456,8 @@ const toolResult = (structured, isError) => ({
  * the answer "there is no such talk", so it comes back as a tool result with
  * `isError`, not as a JSON-RPC error. Confusing the two teaches a client to
  * retry a request that will never succeed.
- *
- * @param {string} message
- * @returns {object}
  */
-const toolError = (message) => ({
+const toolError = (message: string): ToolResult => ({
   content: [{ type: 'text', text: message }],
   structuredContent: { error: message },
   isError: true,
@@ -403,12 +466,16 @@ const toolError = (message) => ({
 /**
  * Runs one tool.
  *
- * @param {string} name
- * @param {Record<string, unknown>} args
- * @param {{ ASSETS: { fetch: Function } }} env
- * @returns {Promise<object>}
+ * `args` is `unknown`-ish on purpose: it arrives straight off the wire, and the
+ * narrowing below is the only thing standing between a hostile body and the
+ * dataset. Typing it as the tool's declared schema would be a lie about what
+ * was actually received.
  */
-export async function callTool(name, args, env) {
+export async function callTool(
+  name: string,
+  args: Record<string, unknown>,
+  env: Env,
+): Promise<ToolResult> {
   const known = TOOLS.map((tool) => tool.name);
   if (!known.includes(name)) {
     return toolError(`No tool named ${JSON.stringify(name)}. This server exposes: ${known.join(', ')}.`);
@@ -417,14 +484,14 @@ export async function callTool(name, args, env) {
   const talks = await loadTalks(env);
 
   if (name === 'list_talks') {
-    const year = args?.year;
+    const year = args.year;
     const matching = year === undefined
       ? talks
       : talks.filter((talk) => Number(talk.date.slice(0, 4)) === Number(year));
     return toolResult({ talks: matching.map(talkSummary) });
   }
 
-  const wanted = String(args?.id ?? '');
+  const wanted = String(args.id ?? '');
   const talk = talks.find((candidate) => talkId(candidate) === wanted);
   if (!talk) {
     return toolError(`No talk with id ${JSON.stringify(wanted)}. Valid ids: ${talks.map(talkId).join(', ')}.`);
@@ -435,13 +502,13 @@ export async function callTool(name, args, env) {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `node --test src/mcp.test.mjs`
+Run: `node --test src/mcp.test.mts`
 Expected: PASS, 13 tests.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/mcp.mjs src/mcp.test.mjs
+git add src/mcp.mts src/mcp.test.mts
 git commit -m "feat(mcp): list_talks and get_talk over the talks dataset"
 ```
 
@@ -450,8 +517,8 @@ git commit -m "feat(mcp): list_talks and get_talk over the talks dataset"
 ### Task 3: Protocol layer — header validation, version, dispatch
 
 **Files:**
-- Modify: `src/mcp.mjs`
-- Modify: `src/mcp.test.mjs`
+- Modify: `src/mcp.mts`
+- Modify: `src/mcp.test.mts`
 
 **Interfaces:**
 - Consumes: `TOOLS`, `callTool` from Task 2.
@@ -459,9 +526,13 @@ git commit -m "feat(mcp): list_talks and get_talk over the talks dataset"
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `src/mcp.test.mjs` (add `decodeHeaderValue`, `dispatch` to the import):
+Append to `src/mcp.test.mts`, adding `decodeHeaderValue` and `dispatch` to the value import and widening the type import — `Env` came from Task 1, `RpcError` is new in this task:
 
-```js
+```ts
+import type { ToolResult, TalkSummary, TalkDetail, Env, RpcError } from './mcp.mts';
+```
+
+```ts
 test('decodeHeaderValue passes plain ASCII through untouched', () => {
   assert.equal(decodeHeaderValue('get_talk'), 'get_talk');
   assert.equal(decodeHeaderValue('tools/call'), 'tools/call');
@@ -476,8 +547,27 @@ test('decodeHeaderValue refuses undecodable sentinel values', () => {
     'returning the raw string would let a broken header match the body by accident');
 });
 
+/**
+ * `dispatch` returns one arm of a union, so `const { result } = ...` is
+ * `Record<string, unknown> | undefined` and every read off it is an error.
+ * These assert which arm came back — and a wrong arm fails with the *other*
+ * arm's contents in the message, which is the thing you want to see when a test
+ * that expected a result got an error instead.
+ */
+const resultOf = async (message: unknown, env: Env): Promise<Payload> => {
+  const answer = await dispatch(message, env);
+  assert.ok(answer.result, `expected a result, got error ${JSON.stringify(answer.error)}`);
+  return answer.result;
+};
+
+const errorOf = async (message: unknown, env: Env): Promise<RpcError> => {
+  const answer = await dispatch(message, env);
+  assert.ok(answer.error, `expected an error, got result ${JSON.stringify(answer.result)}`);
+  return answer.error;
+};
+
 /** A well-formed request body for the modern revision. */
-const rpc = (method, params = {}) => ({
+const rpc = (method: string, params: Payload = {}): Payload => ({
   jsonrpc: '2.0',
   id: 1,
   method,
@@ -491,7 +581,7 @@ const rpc = (method, params = {}) => ({
 });
 
 test('server/discover reports the version, capabilities and identity', async () => {
-  const { result } = await dispatch(rpc('server/discover'), stubAssets());
+  const result = await resultOf(rpc('server/discover'), stubAssets());
   assert.equal(result.resultType, 'complete', 'every result must carry a resultType');
   assert.deepEqual(result.supportedVersions, [PROTOCOL_VERSION]);
   assert.deepEqual(result.capabilities, { tools: {} });
@@ -501,20 +591,21 @@ test('server/discover reports the version, capabilities and identity', async () 
 });
 
 test('tools/list returns exactly the two tools', async () => {
-  const { result } = await dispatch(rpc('tools/list'), stubAssets());
+  const result = await resultOf(rpc('tools/list'), stubAssets());
   assert.equal(result.resultType, 'complete');
-  assert.deepEqual(result.tools.map((tool) => tool.name), ['list_talks', 'get_talk']);
+  assert.deepEqual(result.tools.map((tool: Payload) => tool.name), ['list_talks', 'get_talk']);
 });
 
 test('tools/call runs the tool', async () => {
-  const { result } = await dispatch(
+  const result = await resultOf(
     rpc('tools/call', { name: 'list_talks', arguments: {} }), stubAssets());
   assert.equal(result.resultType, 'complete');
+  // The tool result is spread into the RPC result, so structuredContent is here.
   assert.equal(result.structuredContent.talks.length, 3);
 });
 
 test('a missing protocolVersion in _meta is invalid params', async () => {
-  const { error } = await dispatch({
+  const error = await errorOf({
     jsonrpc: '2.0', id: 1, method: 'tools/list',
     params: { _meta: { 'io.modelcontextprotocol/clientCapabilities': {} } },
   }, stubAssets());
@@ -522,7 +613,7 @@ test('a missing protocolVersion in _meta is invalid params', async () => {
 });
 
 test('a missing clientCapabilities in _meta is invalid params', async () => {
-  const { error } = await dispatch({
+  const error = await errorOf({
     jsonrpc: '2.0', id: 1, method: 'tools/list',
     params: { _meta: { 'io.modelcontextprotocol/protocolVersion': PROTOCOL_VERSION } },
   }, stubAssets());
@@ -533,18 +624,18 @@ test('a missing clientCapabilities in _meta is invalid params', async () => {
 test('an unsupported protocol version lists what is supported', async () => {
   const message = rpc('tools/list');
   message.params._meta['io.modelcontextprotocol/protocolVersion'] = '2025-06-18';
-  const { error } = await dispatch(message, stubAssets());
+  const error = await errorOf(message, stubAssets());
   assert.equal(error.code, -32022);
-  assert.deepEqual(error.data.supported, [PROTOCOL_VERSION]);
+  assert.deepEqual((error.data as Payload).supported, [PROTOCOL_VERSION]);
 });
 
 test('an unknown method is method not found', async () => {
-  const { error } = await dispatch(rpc('prompts/list'), stubAssets());
+  const error = await errorOf(rpc('prompts/list'), stubAssets());
   assert.equal(error.code, -32601);
 });
 
 test('a legacy initialize is rejected as an unknown method, not honoured', async () => {
-  const { error } = await dispatch(rpc('initialize'), stubAssets());
+  const error = await errorOf(rpc('initialize'), stubAssets());
   assert.equal(error.code, -32601,
     'this server implements 2026-07-28 only — there is no handshake to answer');
 });
@@ -552,28 +643,28 @@ test('a legacy initialize is rejected as an unknown method, not honoured', async
 test('a non-2.0 jsonrpc field is an invalid request', async () => {
   const message = rpc('tools/list');
   message.jsonrpc = '1.0';
-  const { error } = await dispatch(message, stubAssets());
+  const error = await errorOf(message, stubAssets());
   assert.equal(error.code, -32600);
 });
 
 test('a null id is an invalid request', async () => {
   const message = rpc('tools/list');
   message.id = null;
-  const { error } = await dispatch(message, stubAssets());
+  const error = await errorOf(message, stubAssets());
   assert.equal(error.code, -32600, 'MCP forbids a null id, unlike base JSON-RPC');
 });
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node --test src/mcp.test.mjs`
+Run: `node --test src/mcp.test.mts`
 Expected: FAIL — `decodeHeaderValue` / `dispatch` are not exported.
 
 - [ ] **Step 3: Write minimal implementation**
 
-Append to `src/mcp.mjs`:
+Append to `src/mcp.mts`:
 
-```js
+```ts
 const META_PROTOCOL_VERSION = 'io.modelcontextprotocol/protocolVersion';
 const META_CLIENT_CAPABILITIES = 'io.modelcontextprotocol/clientCapabilities';
 const META_SERVER_INFO = 'io.modelcontextprotocol/serverInfo';
@@ -600,12 +691,10 @@ const COMPLETE = {
  * An undecodable sentinel returns null rather than the raw string. The caller
  * compares this against the request body, and a value that cannot be decoded
  * must never compare equal to anything — returning the raw text would let a
- * malformed header satisfy the check it exists to enforce.
- *
- * @param {string | null | undefined} value
- * @returns {string | null}
+ * malformed header satisfy the check it exists to enforce. An absent header is
+ * null for the same reason.
  */
-export function decodeHeaderValue(value) {
+export function decodeHeaderValue(value: string | null | undefined): string | null {
   if (typeof value !== 'string') return null;
   const match = /^=\?base64\?(.*)\?=$/s.exec(value);
   if (!match) return value;
@@ -618,7 +707,19 @@ export function decodeHeaderValue(value) {
   }
 }
 
-const errorResponse = (code, message, data) => ({
+/** A JSON-RPC error object, as this server emits them. */
+export interface RpcError {
+  code: number;
+  message: string;
+  data?: unknown;
+}
+
+/** What dispatch answers with: exactly one of the two, never both. */
+export type Dispatched =
+  | { result: Record<string, unknown>; error?: undefined }
+  | { error: RpcError; result?: undefined };
+
+const errorResponse = (code: number, message: string, data?: unknown): Dispatched => ({
   error: { code, message, ...(data === undefined ? {} : { data }) },
 });
 
@@ -629,29 +730,35 @@ const errorResponse = (code, message, data) => ({
  * function sees only the body, which is what makes every rule below testable
  * without constructing an HTTP request.
  *
- * @param {any} message Parsed JSON-RPC request.
- * @param {{ ASSETS: { fetch: Function } }} env
- * @returns {Promise<{ result: object } | { error: object }>}
+ * `message` is `unknown` because it is whatever JSON.parse returned: the checks
+ * below are what turn it into something with a shape, and typing it as a
+ * request up front would assume the very thing they verify.
  */
-export async function dispatch(message, env) {
+export async function dispatch(message: unknown, env: Env): Promise<Dispatched> {
   if (message === null || typeof message !== 'object' || Array.isArray(message)) {
     // Arrays land here too: this revision has no JSON-RPC batching, so a batch
     // is not a request the server can partially honour.
     return errorResponse(INVALID_REQUEST, 'Expected a single JSON-RPC 2.0 request object.');
   }
-  if (message.jsonrpc !== '2.0') {
+  // Past the guard above this is an object, but every member is still whatever
+  // arrived. Naming that once keeps each check below about the protocol rule it
+  // enforces rather than about re-proving the value has members at all.
+  const request = message as Record<string, unknown>;
+
+  if (request.jsonrpc !== '2.0') {
     return errorResponse(INVALID_REQUEST, 'The jsonrpc field must be exactly "2.0".');
   }
-  if (typeof message.method !== 'string') {
+  if (typeof request.method !== 'string') {
     return errorResponse(INVALID_REQUEST, 'The method field must be a string.');
   }
   // MCP tightens base JSON-RPC here: an id may be a string or a number, never
   // null. A notification has no id at all and never reaches this branch.
-  if ('id' in message && message.id === null) {
+  if ('id' in request && request.id === null) {
     return errorResponse(INVALID_REQUEST, 'A request id must not be null.');
   }
 
-  const meta = message.params?._meta ?? {};
+  const params = (request.params ?? {}) as Record<string, unknown>;
+  const meta = (params._meta ?? {}) as Record<string, unknown>;
   const version = meta[META_PROTOCOL_VERSION];
   if (typeof version !== 'string') {
     return errorResponse(INVALID_PARAMS,
@@ -667,7 +774,7 @@ export async function dispatch(message, env) {
       { supported: [PROTOCOL_VERSION] });
   }
 
-  switch (message.method) {
+  switch (request.method) {
     case 'server/discover':
       return {
         result: {
@@ -680,27 +787,28 @@ export async function dispatch(message, env) {
     case 'tools/list':
       return { result: { ...COMPLETE, tools: TOOLS } };
     case 'tools/call': {
-      const name = message.params?.name;
+      const name = params.name;
       if (typeof name !== 'string') {
         return errorResponse(INVALID_PARAMS, 'tools/call requires a string params.name.');
       }
-      return { result: { ...COMPLETE, ...(await callTool(name, message.params?.arguments ?? {}, env)) } };
+      const args = (params.arguments ?? {}) as Record<string, unknown>;
+      return { result: { ...COMPLETE, ...(await callTool(name, args, env)) } };
     }
     default:
-      return errorResponse(METHOD_NOT_FOUND, `This server does not implement ${message.method}.`);
+      return errorResponse(METHOD_NOT_FOUND, `This server does not implement ${request.method}.`);
   }
 }
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `node --test src/mcp.test.mjs`
+Run: `node --test src/mcp.test.mts`
 Expected: PASS, 26 tests.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/mcp.mjs src/mcp.test.mjs
+git add src/mcp.mts src/mcp.test.mts
 git commit -m "feat(mcp): JSON-RPC dispatch, version negotiation and discovery"
 ```
 
@@ -711,8 +819,8 @@ git commit -m "feat(mcp): JSON-RPC dispatch, version negotiation and discovery"
 The status codes are the part a client depends on most: `404` for an unknown method is how it tells a modern server from a legacy one.
 
 **Files:**
-- Modify: `src/mcp.mjs`
-- Modify: `src/mcp.test.mjs`
+- Modify: `src/mcp.mts`
+- Modify: `src/mcp.test.mts`
 
 **Interfaces:**
 - Consumes: `dispatch`, `decodeHeaderValue` from Task 3.
@@ -720,11 +828,19 @@ The status codes are the part a client depends on most: `404` for an unknown met
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `src/mcp.test.mjs` (add `handleMcp` to the import):
+Append to `src/mcp.test.mts` (add `handleMcp` to the import):
 
-```js
+```ts
+/** Overrides a case needs: extra or replacement headers, or a raw unparsed body. */
+interface PostOptions {
+  headers?: Record<string, string>;
+  /** Sent verbatim instead of JSON.stringify(body) — for malformed-body cases. */
+  raw?: string;
+}
+
 /** POSTs a body with the headers this revision requires. */
-const post = (body, { headers = {}, raw } = {}) => new Request('https://jaredsburrows.com/mcp', {
+const post = (body: Payload | null, { headers = {}, raw }: PostOptions = {}): Request =>
+  new Request('https://jaredsburrows.com/mcp', {
   method: 'POST',
   headers: {
     'content-type': 'application/json',
@@ -741,7 +857,7 @@ test('a well-formed tools/list is 200 application/json', async () => {
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('content-type'), 'application/json');
   assert.equal(response.headers.get('access-control-allow-origin'), '*');
-  const body = await response.json();
+  const body = (await response.json()) as Payload;
   assert.equal(body.id, 1);
   assert.equal(body.result.tools.length, 2);
 });
@@ -749,7 +865,7 @@ test('a well-formed tools/list is 200 application/json', async () => {
 test('an unknown method is 404, which is how a client spots a modern server', async () => {
   const response = await handleMcp(post(rpc('prompts/list')), stubAssets());
   assert.equal(response.status, 404);
-  assert.equal((await response.json()).error.code, -32601);
+  assert.equal(((await response.json()) as Payload).error.code, -32601);
 });
 
 test('an unsupported version is 400 and lists what is supported', async () => {
@@ -758,7 +874,7 @@ test('an unsupported version is 400 and lists what is supported', async () => {
   const response = await handleMcp(
     post(message, { headers: { 'mcp-protocol-version': '2025-06-18' } }), stubAssets());
   assert.equal(response.status, 400);
-  const body = await response.json();
+  const body = (await response.json()) as Payload;
   assert.equal(body.error.code, -32022);
   assert.deepEqual(body.error.data.supported, [PROTOCOL_VERSION]);
 });
@@ -767,7 +883,7 @@ test('a MCP-Protocol-Version header that disagrees with the body is a header mis
   const response = await handleMcp(
     post(rpc('tools/list'), { headers: { 'mcp-protocol-version': '2025-11-25' } }), stubAssets());
   assert.equal(response.status, 400);
-  assert.equal((await response.json()).error.code, -32020);
+  assert.equal(((await response.json()) as Payload).error.code, -32020);
 });
 
 test('a missing MCP-Protocol-Version header is a header mismatch', async () => {
@@ -775,14 +891,14 @@ test('a missing MCP-Protocol-Version header is a header mismatch', async () => {
   request.headers.delete('mcp-protocol-version');
   const response = await handleMcp(request, stubAssets());
   assert.equal(response.status, 400);
-  assert.equal((await response.json()).error.code, -32020);
+  assert.equal(((await response.json()) as Payload).error.code, -32020);
 });
 
 test('an Mcp-Method header that disagrees with the body is a header mismatch', async () => {
   const response = await handleMcp(
     post(rpc('tools/list'), { headers: { 'mcp-method': 'tools/call' } }), stubAssets());
   assert.equal(response.status, 400);
-  assert.equal((await response.json()).error.code, -32020);
+  assert.equal(((await response.json()) as Payload).error.code, -32020);
 });
 
 test('tools/call requires an Mcp-Name header matching params.name', async () => {
@@ -790,7 +906,7 @@ test('tools/call requires an Mcp-Name header matching params.name', async () => 
   const response = await handleMcp(
     post(body, { headers: { 'mcp-name': 'get_talk' } }), stubAssets());
   assert.equal(response.status, 400);
-  assert.equal((await response.json()).error.code, -32020);
+  assert.equal(((await response.json()) as Payload).error.code, -32020);
 });
 
 test('a base64-encoded Mcp-Name is decoded before it is compared', async () => {
@@ -822,7 +938,7 @@ test('GET and DELETE are 405 — this revision has no GET stream and no sessions
     const response = await handleMcp(
       new Request('https://jaredsburrows.com/mcp', { method }), stubAssets());
     assert.equal(response.status, 405, `${method} should not be allowed`);
-    assert.match(response.headers.get('allow'), /POST/);
+    assert.match(response.headers.get('allow') ?? '', /POST/);
   }
 });
 
@@ -831,7 +947,7 @@ test('OPTIONS is a CORS preflight a browser agent can use', async () => {
     new Request('https://jaredsburrows.com/mcp', { method: 'OPTIONS' }), stubAssets());
   assert.equal(response.status, 204);
   assert.equal(response.headers.get('access-control-allow-origin'), '*');
-  assert.match(response.headers.get('access-control-allow-headers'), /mcp-protocol-version/i);
+  assert.match(response.headers.get('access-control-allow-headers') ?? '', /mcp-protocol-version/i);
 });
 
 test('Mcp-Session-Id and Last-Event-ID are ignored, and no session is minted', async () => {
@@ -861,7 +977,7 @@ test('a malformed body is a parse error', async () => {
   const response = await handleMcp(
     post(null, { raw: '{not json', headers: { 'mcp-method': 'tools/list' } }), stubAssets());
   assert.equal(response.status, 400);
-  assert.equal((await response.json()).error.code, -32700);
+  assert.equal(((await response.json()) as Payload).error.code, -32700);
 });
 
 test('a JSON-RPC batch is refused — this revision has no batching', async () => {
@@ -869,20 +985,20 @@ test('a JSON-RPC batch is refused — this revision has no batching', async () =
     post(null, { raw: JSON.stringify([rpc('tools/list')]), headers: { 'mcp-method': 'tools/list' } }),
     stubAssets());
   assert.equal(response.status, 400);
-  assert.equal((await response.json()).error.code, -32600);
+  assert.equal(((await response.json()) as Payload).error.code, -32600);
 });
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node --test src/mcp.test.mjs`
+Run: `node --test src/mcp.test.mts`
 Expected: FAIL — `handleMcp` is not exported.
 
 - [ ] **Step 3: Write minimal implementation**
 
-Append to `src/mcp.mjs`:
+Append to `src/mcp.mts`:
 
-```js
+```ts
 const PARSE_ERROR = -32700;
 
 /** Bounds the work one anonymous POST can cause on a metered account. */
@@ -905,12 +1021,21 @@ const CORS_HEADERS = {
   'access-control-max-age': '86400',
 };
 
-const json = (body, status) => new Response(JSON.stringify(body), {
+/** A JSON-RPC id: string or number, or absent when the id could not be read. */
+type RpcId = string | number | undefined;
+
+const json = (body: object, status: number): Response => new Response(JSON.stringify(body), {
   status,
   headers: { 'content-type': 'application/json', ...CORS_HEADERS },
 });
 
-const rpcError = (id, code, message, status, data) => json({
+const rpcError = (
+  id: RpcId,
+  code: number,
+  message: string,
+  status: number,
+  data?: unknown,
+): Response => json({
   jsonrpc: '2.0',
   ...(id === undefined ? {} : { id }),
   error: { code, message, ...(data === undefined ? {} : { data }) },
@@ -924,7 +1049,7 @@ const rpcError = (id, code, message, status, data) => json({
  * MCP and has no such method", while a bare 404 means "no MCP endpoint here".
  * Returning 200 for an unknown method would make this server undetectable.
  */
-const STATUS_FOR = {
+const STATUS_FOR: Record<number, number> = {
   [METHOD_NOT_FOUND]: 404,
   [INVALID_REQUEST]: 400,
   [INVALID_PARAMS]: 400,
@@ -933,14 +1058,8 @@ const STATUS_FOR = {
   [PARSE_ERROR]: 400,
 };
 
-/**
- * Serves `POST /mcp`.
- *
- * @param {Request} request
- * @param {{ ASSETS: { fetch: Function } }} env
- * @returns {Promise<Response>}
- */
-export async function handleMcp(request, env) {
+/** Serves `POST /mcp`. */
+export async function handleMcp(request: Request, env: Env): Promise<Response> {
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: { ...CORS_HEADERS, allow: 'POST, OPTIONS' } });
   }
@@ -963,16 +1082,23 @@ export async function handleMcp(request, env) {
     return rpcError(undefined, INVALID_REQUEST, `Request bodies are limited to ${MAX_BODY_BYTES} bytes.`, 413);
   }
 
-  let message;
+  let message: unknown;
   try {
     message = JSON.parse(body);
   } catch (error) {
-    return rpcError(undefined, PARSE_ERROR, `The request body is not valid JSON: ${error.message}`, 400);
+    // `catch` binds `unknown` under strict, and a thrown non-Error has no
+    // .message — so the reason is read defensively rather than assumed.
+    const reason = error instanceof Error ? error.message : String(error);
+    return rpcError(undefined, PARSE_ERROR, `The request body is not valid JSON: ${reason}`, 400);
   }
 
-  const id = message !== null && typeof message === 'object' && !Array.isArray(message)
-    ? message.id
+  // The id is echoed on the error response, so it is read before the body has
+  // been shown to be a valid request at all — and only when it is the type MCP
+  // allows. Anything else (including null) is left off the response entirely.
+  const rawId = message !== null && typeof message === 'object' && !Array.isArray(message)
+    ? (message as Record<string, unknown>).id
     : undefined;
+  const id: RpcId = typeof rawId === 'string' || typeof rawId === 'number' ? rawId : undefined;
 
   // Header/body agreement, before anything reads the body's meaning. An
   // intermediary may route on the header while this server acts on the body, so
@@ -995,35 +1121,35 @@ export async function handleMcp(request, env) {
   return json({ jsonrpc: '2.0', id, result: answer.result }, 200);
 }
 
-/**
- * The reason the mirrored headers disagree with the body, or null when they agree.
- *
- * @param {Request} request
- * @param {any} message
- * @returns {string | null}
- */
-function headerMismatch(request, message) {
+/** The reason the mirrored headers disagree with the body, or null when they agree. */
+function headerMismatch(request: Request, message: unknown): string | null {
+  const body = (message !== null && typeof message === 'object' && !Array.isArray(message)
+    ? message
+    : {}) as Record<string, unknown>;
+  const params = (body.params ?? {}) as Record<string, unknown>;
+  const meta = (params._meta ?? {}) as Record<string, unknown>;
+
   const version = decodeHeaderValue(request.headers.get('mcp-protocol-version'));
   if (version === null) {
     return 'Every POST must carry an MCP-Protocol-Version header.';
   }
-  const bodyVersion = message?.params?._meta?.[META_PROTOCOL_VERSION];
+  const bodyVersion = meta[META_PROTOCOL_VERSION];
   if (typeof bodyVersion === 'string' && bodyVersion !== version) {
     return `MCP-Protocol-Version header ${JSON.stringify(version)} does not match the body's ${JSON.stringify(bodyVersion)}.`;
   }
 
   const method = decodeHeaderValue(request.headers.get('mcp-method'));
   if (method === null) return 'Every POST must carry an Mcp-Method header.';
-  if (typeof message?.method === 'string' && message.method !== method) {
-    return `Mcp-Method header ${JSON.stringify(method)} does not match the body's ${JSON.stringify(message.method)}.`;
+  if (typeof body.method === 'string' && body.method !== method) {
+    return `Mcp-Method header ${JSON.stringify(method)} does not match the body's ${JSON.stringify(body.method)}.`;
   }
 
   // Mcp-Name mirrors params.name, and is required for the calls that have one.
-  if (message?.method === 'tools/call') {
+  if (body.method === 'tools/call') {
     const name = decodeHeaderValue(request.headers.get('mcp-name'));
     if (name === null) return 'tools/call must carry an Mcp-Name header.';
-    if (typeof message?.params?.name === 'string' && message.params.name !== name) {
-      return `Mcp-Name header ${JSON.stringify(name)} does not match the body's ${JSON.stringify(message.params.name)}.`;
+    if (typeof params.name === 'string' && params.name !== name) {
+      return `Mcp-Name header ${JSON.stringify(name)} does not match the body's ${JSON.stringify(params.name)}.`;
     }
   }
   return null;
@@ -1032,13 +1158,13 @@ function headerMismatch(request, message) {
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `node --test src/mcp.test.mjs`
+Run: `node --test src/mcp.test.mts`
 Expected: PASS, 42 tests.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/mcp.mjs src/mcp.test.mjs
+git add src/mcp.mts src/mcp.test.mts
 git commit -m "feat(mcp): streamable HTTP handler with header validation and CORS"
 ```
 
@@ -1049,10 +1175,10 @@ git commit -m "feat(mcp): streamable HTTP handler with header validation and COR
 Routing was measured under `wrangler dev` before this plan was written (see the spec's "Routing, measured"): `run_worker_first` is exact-match, and a `mcp/` directory causes no trailing-slash redirect.
 
 **Files:**
-- Modify: `src/worker.mjs` (the `fetch` handler, and the header comment)
+- Modify: `src/worker.mts` (the `fetch` handler, and the header comment)
 - Modify: `wrangler.jsonc:22`
 - Modify: `.github/workflows/build.yml:67-68`
-- Modify: `src/worker.test.mjs`
+- Modify: `src/worker.test.mts`
 
 **Interfaces:**
 - Consumes: `handleMcp` from Task 4.
@@ -1060,9 +1186,9 @@ Routing was measured under `wrangler dev` before this plan was written (see the 
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `src/worker.test.mjs`:
+Append to `src/worker.test.mts`:
 
-```js
+```ts
 test('/mcp is handed to the MCP server, not the asset router', async () => {
   const env = homepage();
   const response = await worker.fetch(new Request('https://jaredsburrows.com/mcp', {
@@ -1093,20 +1219,24 @@ test('/ is unaffected by the second route', async () => {
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node --test src/worker.test.mjs`
+Run: `node --test src/worker.test.mts`
 Expected: FAIL — `/mcp` falls through to the asset stub and returns 404.
 
 - [ ] **Step 3: Write minimal implementation**
 
-In `src/worker.mjs`, add the import at the top of the imports (the file currently has none, so place it directly after the header comment block):
+In `src/worker.mts`, add the import at the top of the imports (the file currently has none, so place it directly after the header comment block):
 
-```js
-import { handleMcp } from './mcp.mjs';
+```ts
+import { handleMcp } from './mcp.mts';
 ```
+
+The extension is written out because `allowImportingTsExtensions` is set and Node opens the literal path — it does no extension rewriting, and nothing is emitted for it to rewrite to.
+
+`worker.mts` declares its own `interface Env` and `mcp.mts` exports one. Leave both: they are structurally identical, so TypeScript accepts the value across the call, and neither file has to import the other's environment type to describe its own. If they ever diverge, the call site is where it will surface.
 
 Then, inside `fetch`, immediately after `const url = new URL(request.url);`:
 
-```js
+```ts
     // The second billed route. `run_worker_first` lists "/mcp" as an exact
     // pattern, so /mcp/server-card — the card this endpoint is advertised by —
     // is still served by the asset router and stays unbilled. Verified under
@@ -1116,7 +1246,7 @@ Then, inside `fetch`, immediately after `const url = new URL(request.url);`:
 
 Update the file's opening comment. It currently opens:
 
-```js
+```ts
 // Markdown content negotiation for the homepage — the only code this site runs.
 //
 // `assets.run_worker_first: ["/"]` in wrangler.jsonc scopes it to `/`: every
@@ -1129,9 +1259,9 @@ Update the file's opening comment. It currently opens:
 
 Both statements are now false — this is no longer the only code, and `/` is no longer the only route. Replace those two paragraphs with:
 
-```js
+```ts
 // Markdown content negotiation for the homepage, and the front door for the MCP
-// server in mcp.mjs — the two paths this site runs code on.
+// server in mcp.mts — the two paths this site runs code on.
 //
 // `assets.run_worker_first: ["/", "/mcp"]` in wrangler.jsonc scopes it to those
 // two: every other path (CSS, JS, images, /index.md itself, /api/*, the card at
@@ -1140,7 +1270,7 @@ Both statements are now false — this is no longer the only code, and `/` is no
 // are exact matches — "/mcp" does not capture "/mcp/server-card". On `/` the
 // script asks one question — did the client name `text/markdown` in `Accept`? —
 // and answers it with either the hand-written markdown twin or the ordinary HTML
-// page. On `/mcp` it hands the request to mcp.mjs and does nothing else.
+// page. On `/mcp` it hands the request to mcp.mts and does nothing else.
 ```
 
 In `wrangler.jsonc`, change line 22 and the comment above it:
@@ -1157,21 +1287,21 @@ In `.github/workflows/build.yml`, change the Worker test step so new suites are 
 
 ```yaml
       - name: Test the Worker
-        run: node --test src/*.test.mjs
+        run: node --test src/*.test.mts
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `node --test src/*.test.mjs`
+Run: `node --test src/*.test.mts`
 Expected: PASS — both suites green.
 
 Run: `npx --yes wrangler deploy --dry-run`
-Expected: succeeds, and reports the bundled Worker including `src/mcp.mjs`.
+Expected: succeeds, and reports the bundled Worker including `src/mcp.mts`.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/worker.mjs src/worker.test.mjs wrangler.jsonc .github/workflows/build.yml
+git add src/worker.mts src/worker.test.mts wrangler.jsonc .github/workflows/build.yml
 git commit -m "feat(mcp): route /mcp to the MCP server"
 ```
 
@@ -1381,7 +1511,7 @@ const CARD_PATHS = [
   '.well-known/mcp.json',
 ];
 const originalCard = fs.readFileSync(path.join(repoRoot, 'mcp/server-card'), 'utf8');
-const originalMcpSource = fs.readFileSync(path.join(repoRoot, 'src/mcp.mjs'), 'utf8');
+const originalMcpSource = fs.readFileSync(path.join(repoRoot, 'src/mcp.mts'), 'utf8');
 const originalRedirects = fs.readFileSync(path.join(repoRoot, '_redirects'), 'utf8');
 
 /** The same mutated card written to all three paths, so byte equality still holds. */
@@ -1410,7 +1540,7 @@ testFiles('a remotes url that is not the route the Worker serves fails the build
 
 testFiles('a card advertising a tool the server does not export fails the build',
   allCards((card) => { card.capabilities.tools = ['list_talks', 'get_talk', 'search_talks']; }),
-  1, '"search_talks" that src/mcp.mjs does not export');
+  1, '"search_talks" that src/mcp.mts does not export');
 
 testFiles('a card that drops a tool the server exports fails the build',
   allCards((card) => { card.capabilities.tools = ['list_talks']; }),
@@ -1422,7 +1552,7 @@ testFiles('a card version that disagrees with SERVER_VERSION fails the build',
 
 testFiles('a card claiming a protocol revision the server does not implement fails the build',
   allCards((card) => { card.remotes[0].supportedProtocolVersions = ['2025-06-18']; }),
-  1, 'the only revision src/mcp.mjs implements');
+  1, 'the only revision src/mcp.mts implements');
 
 testFiles('a wrong $schema fails the build',
   allCards((card) => { card.$schema = 'https://example.invalid/card.json'; }),
@@ -1433,7 +1563,7 @@ testFiles('a name that is not reverse-DNS with one slash fails the build',
   1, 'reverse-DNS with exactly one slash');
 
 testFiles('renaming a tool in the server without updating the card fails the build',
-  { 'src/mcp.mjs': originalMcpSource.replace("name: 'get_talk',", "name: 'fetch_talk',") },
+  { 'src/mcp.mts': originalMcpSource.replace("name: 'get_talk',", "name: 'fetch_talk',") },
   1, 'does not advertise');
 
 testFiles('dropping the Content-Type rule on the extensionless card fails the build',
@@ -1476,7 +1606,7 @@ Append to `.github/validate-site.js`, after the ARD section:
 
 ```js
 // --- MCP server card. One document published at three paths, advertising a
-// server that lives in src/mcp.mjs, discovered through a manifest entry in a
+// server that lives in src/mcp.mts, discovered through a manifest entry in a
 // fourth file. Four things that must agree and nothing at runtime that
 // notices when they stop: a card naming a tool the server dropped sends an
 // agent to call something that errors, and a stale endpoint sends it nowhere
@@ -1511,13 +1641,14 @@ for (const name of CARD_PATHS.slice(1)) {
 
 // The server is the source of truth for its own identity and tool list; the
 // card only restates it. Read the module's text rather than importing it:
-// validate-site.js is CommonJS and mcp.mjs is an ES module, and a regex over
+// validate-site.js is CommonJS and mcp.mts is TypeScript ESM — require() cannot
+// load it, and this file is checked by tsc but never compiled. A regex over
 // the exported constants is enough to catch the drift this guards against.
 const mcpSource = (() => {
   try {
-    return read('src/mcp.mjs');
+    return read('src/mcp.mts');
   } catch (error) {
-    bad(`src/mcp.mjs is missing, but the server card advertises it (${error.message})`);
+    bad(`src/mcp.mts is missing, but the server card advertises it (${error.message})`);
     return '';
   }
 })();
@@ -1544,30 +1675,30 @@ if (cardText.has(canonicalCard)) {
       bad(`${canonicalCard} endpoint ${JSON.stringify(card.endpoint)} disagrees with remotes[0].url ${JSON.stringify(remote?.url)} — the two shapes must state the same endpoint`);
     }
     if (protocolVersion && !remote?.supportedProtocolVersions?.includes(protocolVersion)) {
-      bad(`${canonicalCard} does not list ${protocolVersion}, the only revision src/mcp.mjs implements`);
+      bad(`${canonicalCard} does not list ${protocolVersion}, the only revision src/mcp.mts implements`);
     }
     if (serverName && card.name !== serverName) {
-      bad(`${canonicalCard} name ${JSON.stringify(card.name)} disagrees with SERVER_NAME in src/mcp.mjs`);
+      bad(`${canonicalCard} name ${JSON.stringify(card.name)} disagrees with SERVER_NAME in src/mcp.mts`);
     }
     if (serverVersion && card.version !== serverVersion) {
-      bad(`${canonicalCard} version ${JSON.stringify(card.version)} disagrees with SERVER_VERSION in src/mcp.mjs`);
+      bad(`${canonicalCard} version ${JSON.stringify(card.version)} disagrees with SERVER_VERSION in src/mcp.mts`);
     }
     if (serverVersion && card.serverInfo?.version !== card.version) {
       bad(`${canonicalCard} serverInfo.version disagrees with its own version field`);
     }
     // The tool list is the claim most likely to rot: tools get added and
-    // renamed in mcp.mjs, and nothing but this line notices the card did not
+    // renamed in mcp.mts, and nothing but this line notices the card did not
     // follow.
     const claimed = card.capabilities?.tools ?? [];
     if (exportedTools.length > 0) {
       for (const tool of claimed) {
         if (!exportedTools.includes(tool)) {
-          bad(`${canonicalCard} advertises a tool ${JSON.stringify(tool)} that src/mcp.mjs does not export`);
+          bad(`${canonicalCard} advertises a tool ${JSON.stringify(tool)} that src/mcp.mts does not export`);
         }
       }
       for (const tool of exportedTools) {
         if (!claimed.includes(tool)) {
-          bad(`src/mcp.mjs exports a tool ${JSON.stringify(tool)} that ${canonicalCard} does not advertise`);
+          bad(`src/mcp.mts exports a tool ${JSON.stringify(tool)} that ${canonicalCard} does not advertise`);
         }
       }
     }
@@ -1654,21 +1785,25 @@ the location SEP-2127 reserves, and `.well-known/mcp/server-card.json` and
 `.well-known/mcp.json` are the paths today's scanners probe. Edit
 `mcp/server-card` and copy it to both; `validate-site.js` fails the build if
 the three ever differ, if the card's endpoint stops matching the Worker, or if
-its tool list stops matching `src/mcp.mjs`.
+its tool list stops matching `src/mcp.mts`.
 ```
 
 - [ ] **Step 6: Run the full check suite**
 
 ```bash
+npm ci
+npm run typecheck
 node .github/validate-talks.js
 node .github/validate-site.js
 node .github/validate-site.test.js
-node --test src/*.test.mjs
+node --test src/*.test.mts
 npx --yes wrangler deploy --dry-run
 git ls-files '*.html' | xargs java -jar node_modules/vnu-jar/build/dist/vnu.jar
 ```
 
-Expected: all green. This is exactly what CI runs.
+Expected: all green. This is exactly what CI runs, in CI's order.
+
+`npm run typecheck` is the step most likely to fail first here, and it covers more than `src/`: `tsconfig.json` includes `.github/**/*.js` with `checkJs` and `strict`, so the validator code added in Step 3 is type-checked as well as executed. A `bad(...)` call is fine; an unguarded `card.remotes[0].url` on a `JSON.parse` result may not be.
 
 - [ ] **Step 7: Commit**
 
