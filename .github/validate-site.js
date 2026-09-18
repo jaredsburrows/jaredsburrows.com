@@ -16,8 +16,14 @@
 //   Cloudflare purge never reaches a browser cache, so renaming the file is
 //   the only cache-bust there is and half a rename is a 30-day 404
 // - /auth.md losing the H1 that agent discovery matches on
+// - /index.md, the markdown twin of the homepage, drifting away from the talks
+//   index.html publishes (no page renders it, so only an agent would notice)
 // - two _headers rules setting the same header on overlapping paths
 //   (values from all matching rules comma-join into one broken header)
+// - a cache TTL on /, which is content-negotiated: Cloudflare's cache ignores
+//   Vary, so a stored copy would be served to every client whatever it asked
+//   for (this one has not shipped — it is the one _headers edit that would
+//   hand the markdown homepage to browsers, and nothing else would go red)
 // The API catalog and JSON-LD checks are the exception: nothing has broken
 // yet, because both are new. The catalog exists because RFC 9727 makes
 // machine-read promises about other files, and a broken one is invisible from
@@ -604,6 +610,139 @@ if (!fs.existsSync(authMdPath)) {
   }
 }
 
+// --- /index.md, the markdown twin of the homepage. src/worker.mjs serves it
+// from / when the request names `text/markdown` in `Accept`, so for an agent
+// asking for markdown this file IS the homepage — and no browser ever renders
+// it, which makes every failure here invisible outside CI. The twin is
+// hand-written on purpose (generating it would be the build step this site has
+// never had), so it can only be kept honest by checking it against the files it
+// restates: it must exist, it must open with the H1 a markdown reader shows as
+// the title, the blockquote under that H1 must be index.html's meta description
+// verbatim, and its talks list must agree with `static/js/talks.js` in both
+// directions. The talks one is the drift that will actually happen: a talk gets
+// added to talks.js and api/talks.json (README tells you to do both) and the
+// twin quietly keeps serving the old list to every agent that prefers markdown.
+const MARKDOWN_TWIN = 'index.md';
+const twinPath = path.join(root, MARKDOWN_TWIN);
+if (!fs.existsSync(twinPath)) {
+  bad(`${MARKDOWN_TWIN} is missing — / would fall back to HTML for every agent that asks for markdown`);
+} else {
+  const twin = fs.readFileSync(twinPath, 'utf8');
+  // Anchored at the start of the file, not at any line: the first thing in a
+  // markdown document is its title, and front matter or a stray preamble ahead
+  // of it is exactly the kind of "generator crept in" change to reject.
+  if (!/^#[ \t]+\S/.test(twin)) {
+    bad(`${MARKDOWN_TWIN} does not start with an ATX H1 ("# Jared Burrows") — the markdown homepage has no title`);
+  }
+
+  // The summary has exactly one source. index.html's <meta name="description">
+  // is the sentence search engines and link unfurls quote; the twin quotes it
+  // back, as the blockquote directly under the H1, so an agent gets the same
+  // sentence a search result would. It is a blockquote and not a paragraph
+  // precisely so the prose beneath it can carry only what the summary does not
+  // already say — the two used to restate each other (BUGS.md B3). Two
+  // hand-written copies of one sentence drift silently — nothing renders both —
+  // so they are compared here. The normalisation is Markdown's own: the `> `
+  // marker comes off each line and a single newline inside the quote renders as
+  // a space, so what is compared is the rendered text, byte for byte. Both sides
+  // stay plain text: an HTML entity on one side and its character on the other
+  // fails this check, and the fix is to keep both plain rather than to teach it
+  // to decode.
+  const descriptionMatch = indexHtml.match(/<meta\s+name="description"\s+content="([^"]*)"/i);
+  if (!descriptionMatch) {
+    bad('index.html: <meta name="description"> not found, so the markdown twin has nothing to match its summary blockquote against');
+  } else if (/^#[ \t]+\S/.test(twin)) {
+    const lines = twin.split('\n');
+    const summary = [];
+    for (let i = 1; i < lines.length; i += 1) {
+      const line = lines[i].trim();
+      if (line === '') {
+        if (summary.length > 0) break;
+        continue;
+      }
+      if (!line.startsWith('>')) break;
+      summary.push(line.replace(/^>[ \t]?/, ''));
+    }
+    if (summary.length === 0) {
+      bad(`${MARKDOWN_TWIN} has no summary blockquote under its H1 — the first thing after the title must be index.html's meta description, quoted`);
+    } else if (summary.join(' ') !== descriptionMatch[1]) {
+      bad(`${MARKDOWN_TWIN} summary blockquote is not index.html's meta description verbatim — the same sentence is written twice and one copy has drifted\n      ${MARKDOWN_TWIN}:   ${summary.join(' ')}\n      index.html: ${descriptionMatch[1]}`);
+    }
+  }
+
+  // The talks list, in both directions. The forward half (every published talk
+  // is in the twin) catches the add that forgets the twin; the reverse half
+  // catches the delete that forgets it, which is the one nothing else can see —
+  // a talk dropped from talks.js and api/talks.json keeps being served to every
+  // agent that reads markdown. Counted, not set-compared, because two talks
+  // share the title "The Road to Single Dex", so losing one of them is invisible
+  // to a containment test. Only `### ` headings inside the `## Talks` section
+  // count: prose elsewhere in the file that mentions a title must not satisfy
+  // the requirement, and a heading outside that section is not part of the
+  // twin's talks list. Order is not checked — the HTML page sorts itself.
+  const twinLines = twin.split('\n');
+  const talksHeading = twinLines.findIndex((line) => /^##[ \t]+Talks[ \t]*$/.test(line));
+  if (talksHeading === -1) {
+    bad(`${MARKDOWN_TWIN} has no "## Talks" section — the markdown homepage publishes no talks at all`);
+  } else {
+    const listed = [];
+    for (let i = talksHeading + 1; i < twinLines.length && !/^##[ \t]/.test(twinLines[i]); i += 1) {
+      const heading = twinLines[i].match(/^###[ \t]+(.*?)[ \t]*$/);
+      if (heading) listed.push(heading[1]);
+    }
+    const tally = (titles) => titles.reduce((counts, title) => counts.set(title, (counts.get(title) ?? 0) + 1), new Map());
+    const published = tally((talksFromJs ?? []).map((talk) => talk.title));
+    const twinned = tally(listed);
+    for (const title of new Set([...published.keys(), ...twinned.keys()])) {
+      const inJs = published.get(title) ?? 0;
+      const inTwin = twinned.get(title) ?? 0;
+      if (inTwin === 0) {
+        bad(`${MARKDOWN_TWIN} does not list the talk "${title}" from static/js/talks.js — the HTML and markdown homepages would disagree about the talks`);
+      } else if (inJs === 0) {
+        bad(`${MARKDOWN_TWIN} lists a talk "${title}" that static/js/talks.js does not publish — the markdown homepage would keep serving a talk the site has dropped`);
+      } else if (inJs !== inTwin) {
+        bad(`${MARKDOWN_TWIN} lists the talk "${title}" ${inTwin} time(s) but static/js/talks.js publishes it ${inJs} time(s) — the HTML and markdown homepages would disagree about the talks`);
+      }
+    }
+  }
+}
+
+// The markup half of the same contract: an agent that parses HTML rather than
+// guessing URLs finds the twin through rel=alternate, and it is the only
+// discovery path that survives the Worker being rolled back.
+const headMatch = indexHtml.match(/<head\b[^>]*>([\s\S]*?)<\/head>/i);
+if (!headMatch) {
+  bad('index.html: no <head> element found');
+} else {
+  const alternateLink = [...headMatch[1].matchAll(/<link\b[^>]*>/gi)]
+    .map(([tag]) => tag)
+    .find((tag) => /\srel="alternate"/i.test(tag) && /\stype="text\/markdown"/i.test(tag));
+  if (!alternateLink) {
+    bad(`index.html head has no <link rel="alternate" type="text/markdown"> pointing at /${MARKDOWN_TWIN}`);
+  } else if (!new RegExp(`\\shref="/${MARKDOWN_TWIN.replace('.', '\\.')}"`).test(alternateLink)) {
+    bad(`index.html rel=alternate markdown link does not point at /${MARKDOWN_TWIN}: ${alternateLink}`);
+  }
+}
+
+// And the cache half: / has two representations now, so a downstream cache that
+// never sees the Accept header would be free to hand the markdown to a browser.
+// src/worker.mjs sets Vary on the responses it builds, but the ones it hands
+// back untouched (a 304 has no body to re-wrap) get it only from here — and
+// this is also what keeps / varying if the Worker is ever rolled back. Vary is
+// only half the protection; the TTL half is checked with the other _headers
+// rules below, because Cloudflare's own cache does not honour Vary.
+const homepageRule = headerRuleValues('/');
+if (!homepageRule) {
+  bad('_headers has no "/" rule, so the homepage cannot carry Vary: Accept');
+} else {
+  const varyValues = homepageRule
+    .filter((line) => /^Vary:/i.test(line))
+    .flatMap((line) => line.slice(line.indexOf(':') + 1).split(',').map((value) => value.trim().toLowerCase()));
+  if (!varyValues.includes('accept')) {
+    bad('_headers "/" rule does not set Vary: Accept — / is content-negotiated between HTML and markdown, so caches must key on Accept');
+  }
+}
+
 // --- _headers: the same header set by two rules that can match one path
 // comma-joins into a single broken value. Overlap heuristic: a glob's
 // "sample" is the glob with * removed; two patterns overlap when either
@@ -613,12 +752,16 @@ for (const line of headers.split('\n')) {
   if (/^\s*(#|$)/.test(line)) continue;
   if (/^\S/.test(line)) {
     if (!line.startsWith('/')) bad(`_headers: pattern "${line.trim()}" must start with /`);
-    rules.push({ pattern: line.trim(), names: [] });
+    rules.push({ pattern: line.trim(), names: [], set: [] });
   } else {
     const match = line.trim().match(/^([A-Za-z-]+):\s/);
     if (!match) bad(`_headers: malformed header line "${line.trim()}"`);
     else if (rules.length === 0) bad(`_headers: header line "${line.trim()}" before any pattern`);
-    else rules.at(-1).names.push(match[1]);
+    else {
+      const trimmed = line.trim();
+      rules.at(-1).names.push(match[1]);
+      rules.at(-1).set.push({ name: match[1], value: trimmed.slice(trimmed.indexOf(':') + 1).trim() });
+    }
   }
 }
 const globRegex = (pattern) => new RegExp(`^${pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`);
@@ -629,6 +772,73 @@ for (let i = 0; i < rules.length; i += 1) {
     for (const name of rules[i].names) {
       if (rules[j].names.includes(name)) {
         bad(`_headers: ${name} is set by overlapping rules ${rules[i].pattern} and ${rules[j].pattern} — the values would comma-join`);
+      }
+    }
+  }
+}
+
+// --- _headers: / is content-negotiated, so it must never be given a TTL.
+// Two representations share one URL (src/worker.mjs answers Accept:
+// text/markdown with index.md, everything else with the HTML), and Vary does
+// not protect them from each other at the edge: Cloudflare's cache keys on the
+// URL and Accept-Encoding, and ignores Vary for every other request header —
+// production already returns cf-cache-status: HIT for /, so that cache is in
+// scope. The only thing keeping the two apart today is that / is never stored:
+// Workers Assets serves it max-age=0, must-revalidate, so every hit
+// revalidates through the Worker. Give / a positive max-age or s-maxage — in
+// its own rule or in any glob that matches it — and one agent request with
+// Accept: text/markdown fills the shared entry that every browser and
+// Googlebot behind it then reads. That is cache poisoning of the homepage with
+// nothing else in the build going red, which is why it is an invariant here
+// rather than a comment in _headers. A zero TTL is fine: pinning
+// `Cache-Control: public, max-age=0, must-revalidate` on / states the default
+// rather than changing it.
+//
+// The Worker pins the same value on the markdown response (src/worker.mjs,
+// SECURITY.md S6), which covers the route this check cannot see — that response
+// republishes /index.md's headers under / — and this check covers the route the
+// pin cannot: a TTL on / itself, where the HTML branch hands the asset router's
+// response straight back. Neither is a substitute for the other, and neither
+// can see a zone-level Cache Rule (README says so).
+const NEGOTIATED_PATH = '/';
+// Every header name that decides how long a copy of / may be reused, not just
+// the obvious one: Cloudflare reads CDN-Cache-Control for its own cache, and
+// Cloudflare-CDN-Cache-Control in preference to both. Neither is forwarded to
+// the client, so checking Cache-Control alone misses the two spellings a
+// Cloudflare-specific "how do I cache this?" reaches for — and misses them
+// invisibly, since a curl against production would not show them either
+// (SECURITY.md S7).
+const TTL_HEADERS = ['cache-control', 'cdn-cache-control', 'cloudflare-cdn-cache-control'];
+// Every directive that lets a shared cache answer from a stored copy instead of
+// revalidating through the Worker. stale-while-revalidate and stale-if-error do
+// it after max-age has run out, so `max-age=0, stale-while-revalidate=600` is
+// the same poisoning window arriving by another route.
+const TTL_DIRECTIVES = ['max-age', 's-maxage', 'stale-while-revalidate', 'stale-if-error'];
+for (const rule of rules.filter((candidate) => globRegex(candidate.pattern).test(NEGOTIATED_PATH))) {
+  const poisons = (name, value) => bad(`_headers rule ${rule.pattern} sets ${name}: ${value} on ${NEGOTIATED_PATH} — ${NEGOTIATED_PATH} serves HTML or markdown depending on Accept, and Cloudflare's cache ignores Vary, so a stored copy is handed to every client whatever it asked for: one agent request would leave the markdown homepage in the edge cache for browsers and Googlebot. ${NEGOTIATED_PATH} must keep revalidating (max-age=0)`);
+  for (const { name, value } of rule.set) {
+    const header = name.toLowerCase();
+    // Expires is the weakest of these — Workers Assets' own max-age=0 outranks
+    // it unless the rule replaces Cache-Control too — but it is still a TTL
+    // written for /, and the rule that does both is one line away. `Expires: 0`
+    // is the conventional spelling of "already stale" and is not a TTL.
+    if (header === 'expires' && value.trim() !== '0') poisons(name, value);
+    if (!TTL_HEADERS.includes(header)) continue;
+    for (const directive of value.split(',')) {
+      // Quotes are legal around a directive value (RFC 9111 §5.2.6), so they
+      // are stripped rather than allowed to hide the number. Then: any
+      // delta-seconds that is not zero, however it is spelled. The check used
+      // to require digits only, which let `max-age=60.0` through (BUGS.md B4) —
+      // RFC 9111's grammar is 1*DIGIT, so a strict cache ignores that directive
+      // entirely, but "strict" is not a property the edge guarantees and some
+      // implementations read the leading 60. The same argument covers `+600`
+      // and `6e2`, so the test is "is this zero?" rather than a list of
+      // spellings: a value that no cache honours costs a build on a header that
+      // had no business being on / anyway, while a value one cache honours is
+      // the whole finding.
+      const ttl = directive.trim().match(/^([a-z-]+)\s*=\s*"?([^"]*)"?$/i);
+      if (ttl && TTL_DIRECTIVES.includes(ttl[1].toLowerCase()) && Number(ttl[2]) !== 0) {
+        poisons(name, value);
       }
     }
   }
@@ -650,4 +860,4 @@ if (errors.length > 0) {
   for (const message of errors) console.error(`  - ${message}`);
   process.exit(1);
 }
-console.log('✓ site invariants hold (CSP parity + coverage, embed referer, id contract, file references, JSON-LD, auth.md discovery, API catalog, ARD manifest, _headers overlap, _redirects syntax)');
+console.log('✓ site invariants hold (CSP parity + coverage, embed referer, id contract, file references, JSON-LD, auth.md discovery, markdown twin, API catalog, ARD manifest, _headers overlap, / stays uncacheable, _redirects syntax)');

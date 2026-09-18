@@ -27,6 +27,18 @@
         "when and where did Jared Burrows speak at Droidcon",
         "get the abstract for Jared Burrows' talk The Road to Single Dex"
       ]
+    },
+    {
+      "identifier": "urn:air:jaredsburrows.com:content:homepage",
+      "displayName": "Homepage in Markdown",
+      "description": "The homepage as Markdown rather than HTML: the same summary, elsewhere links and talks the browser page renders, with none of the markup, analytics or embeds. The site root serves these bytes too, to a request whose Accept names text/markdown.",
+      "type": "text/markdown",
+      "url": "https://jaredsburrows.com/index.md",
+      "representativeQueries": [
+        "who is Jared Burrows",
+        "read Jared Burrows' homepage as markdown",
+        "where else does Jared Burrows publish"
+      ]
     }
   ]
 }

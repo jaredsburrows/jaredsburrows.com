@@ -6,7 +6,7 @@ My blog, presentations, GitHub, and social links.
 [![Build](https://github.com/jaredsburrows/jaredsburrows.com/workflows/build/badge.svg)](https://github.com/jaredsburrows/jaredsburrows.com/actions)
 [![Twitter Follow](https://img.shields.io/twitter/follow/jaredsburrows.svg?style=social)](https://twitter.com/jaredsburrows)
 
-Personal website — fully static, no build step. Cloudflare Workers serves the repo as-is from its edge.
+Personal website — no build step. Cloudflare Workers serves the repo as-is from its edge; one route, `/`, also runs `src/worker.mjs` (see "The Worker").
 
 ### Preview the website
 
@@ -51,6 +51,77 @@ directly, including over `file://`, which a `fetch` of the JSON would break.
 node -e 'global.window={};require("./static/js/talks.js");
 require("fs").writeFileSync("api/talks.json",
   JSON.stringify({talks:window.TALKS},null,2)+"\n")'
+```
+
+### Markdown twin of the homepage
+
+`index.md` is a hand-written copy of `index.html` for agents that ask for
+Markdown instead of HTML. It opens with the H1, then quotes the page's
+`<meta name="description">` as a summary blockquote — the site's one description
+of itself, not a second one. Prose may follow that blockquote, but only carrying
+what the summary does not already say; today it says all of it, so there is
+none. Edit the file whenever you edit the homepage: CI fails if the blockquote
+stops matching the meta description, or if the talks stop matching
+`static/js/talks.js` in either direction. `<link rel="alternate"
+type="text/markdown">` in the head points at it.
+
+### The Worker
+
+`src/worker.mjs` is the only server code on this site. `_headers` and
+`_redirects` cannot branch on a request header, so the Markdown negotiation on
+`/` is a Worker: when the request names `text/markdown` in `Accept` — exactly,
+with a non-zero q, and at least as preferred as `text/html` — it returns
+`index.md` as the homepage; everything else gets the HTML. A header that names
+one media type twice with disagreeing q-values states no preference at all, and
+gets the HTML too.
+
+Revalidation works on both representations: `If-None-Match` and
+`If-Modified-Since` are forwarded onto the `index.md` subrequest, so an agent
+that already holds the Markdown homepage gets a 304 rather than the document
+again. The two carry different ETags, so neither one's validator can ever
+produce a 304 for the other.
+
+`assets.run_worker_first: ["/"]` in `wrangler.jsonc` scopes it to `/`, and
+`assets.binding` is what gives it `env.ASSETS.fetch`. Every other path is
+matched by Cloudflare's asset router before any code runs, so those requests
+are neither slowed down nor billed as Worker invocations.
+
+`/` must never be given a cache TTL. It has two representations on one URL, and
+Cloudflare's cache keys only on the URL and `Accept-Encoding` — it ignores
+`Vary` for every other request header, so a stored copy goes to every client
+whatever its `Accept` says. What keeps them apart is that `/` is never stored:
+Workers Assets serves it `max-age=0, must-revalidate`, so every hit revalidates
+through the Worker. One agent request against a cacheable `/` would leave the
+Markdown in the edge cache for every browser and Googlebot behind it.
+
+Two things hold that down, because there are two ways in. The Worker pins
+`Cache-Control: public, max-age=0, must-revalidate` on the Markdown response:
+that response is `/index.md`'s headers republished under `/`, so without the pin
+a TTL on `/index.md` in `_headers` — which looks exactly as reasonable as the
+one on `/static/js/*` — would land on `/`. And `validate-site.js` fails the
+build on any `Cache-Control`, `CDN-Cache-Control`, `Cloudflare-CDN-Cache-Control`
+or `Expires` that gives `/` itself a TTL — `max-age`, `s-maxage`,
+`stale-while-revalidate` or `stale-if-error`, in `/`'s own rule or any glob that
+matches it. Neither control covers the other's route. `Vary: Accept` stays for
+downstream caches that do honour it.
+
+What neither can see is the zone: an Edge Cache TTL in a Cloudflare Cache Rule
+or Page Rule, "Cache Everything", or Browser Cache TTL all set a TTL for `/`
+from the dashboard, override the response headers above, and produce no diff for
+CI to fail on. If `/` is ever given a cache TTL, it has to be done there and
+noticed there.
+
+Wildcards never select Markdown: a browser ends its `Accept` with `*/*;q=0.8`
+and `curl` sends nothing but `*/*`, so matching one would hand ordinary
+visitors — and Googlebot — a page with no HTML in it. `src/worker.test.mjs` is
+that truth table; run it with `node --test src/worker.test.mjs`.
+
+Both directions are checkable locally, against the real asset router:
+
+```
+npx wrangler dev
+curl -sI -H 'Accept: text/markdown' localhost:8787/ | grep -i -e content-type -e vary
+curl -sI localhost:8787/ | grep -i content-type
 ```
 
 ### Update the avatar

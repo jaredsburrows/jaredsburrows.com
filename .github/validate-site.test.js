@@ -39,6 +39,42 @@ assert.ok(originalHomeJs.includes(REFERRERPOLICY_LINE),
 const originalHeaders = fs.readFileSync(path.join(repoRoot, '_headers'), 'utf8');
 const originalIndexHtml = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
 
+// The homepage description is written twice — index.html's <meta
+// name="description"> and index.md's summary blockquote — and validate-site.js
+// pins them to each other byte for byte (T5a/B3). So these belong to the whole
+// file, not to one block: any fixture that rewrites one copy must rewrite the
+// other, or it trips the drift guard instead of the invariant it meant to test.
+const originalIndexMd = fs.readFileSync(path.join(repoRoot, 'index.md'), 'utf8');
+const META_DESCRIPTION = (originalIndexHtml.match(/<meta name="description" content="([^"]*)">/) ?? [])[1];
+assert.ok(META_DESCRIPTION, 'fixture assumption broken: index.html has no <meta name="description">');
+// B3: the description is the twin's summary blockquote, not its first
+// paragraph — anything under it carries only what the summary does not say.
+// Read as "the block after the H1", never as a hardcoded line range: the
+// summary is soft-wrapped, so a re-wrap or a longer description changes how
+// many lines it occupies, and a slice would then compare the wrong text —
+// a test that passes for the wrong reason rather than one that fails loudly.
+const blockAfterH1 = (markdown) => {
+  const lines = markdown.split('\n').slice(1);
+  const start = lines.findIndex((line) => line.trim() !== '');
+  const end = lines.findIndex((line, index) => index > start && line.trim() === '');
+  return lines.slice(start, end === -1 ? undefined : end);
+};
+const SUMMARY_BLOCKQUOTE = blockAfterH1(originalIndexMd);
+assert.strictEqual(
+  SUMMARY_BLOCKQUOTE.map((line) => line.trim().replace(/^>[ \t]?/, '')).join(' '), META_DESCRIPTION,
+  'fixture assumption broken: index.md no longer quotes the meta description as its summary blockquote');
+assert.ok(SUMMARY_BLOCKQUOTE.every((line) => line.startsWith('> ')),
+  'fixture assumption broken: index.md summary is no longer a blockquote');
+
+// Rewrite the description in both places at once, for tests that are about
+// something else and only need it to hold still. Tests that are about the drift
+// guard itself deliberately edit one side and must not use this. Replacements
+// are functions so a `$` in the text stays literal.
+const withDescription = (text) => ({
+  'index.html': originalIndexHtml.replace(/(name="description" content=)"[^"]+"/, (_, lead) => `${lead}"${text}"`),
+  'index.md': originalIndexMd.replace(SUMMARY_BLOCKQUOTE.join('\n'), () => `> ${text}`),
+});
+
 // The measurement endpoints the CSP must list. `_headers` is production and
 // index.html mirrors it, so a source has to be dropped from both at once or the
 // parity check fires first and masks the coverage check under test.
@@ -685,10 +721,8 @@ for (const offOrigin of [
 // the site origin — rather than only the ones carrying an authority — would
 // turn the description, the viewport and the CSP mirror into file references
 // and fail the build on a sentence.
-testFiles('a description that starts with a word and a colon is still prose', {
-  'index.html': originalIndexHtml.replace(/(name="description" content=)"[^"]+"/,
-    '$1"Android: Kotlin, Gradle, and //100% coverage."'),
-}, 0);
+testFiles('a description that starts with a word and a colon is still prose',
+  withDescription('Android: Kotlin, Gradle, and //100% coverage.'), 0);
 
 // The api-catalog hrefs ran the same string-prefix test and had the same blind
 // spot, so the single helper closes both. Same for the robots.txt Agentmap.
@@ -767,6 +801,224 @@ testFiles(`a JSON-LD block nested ${NESTED_LEVELS} levels deep fails by name, an
 testFiles('an ordinarily nested JSON-LD block passes', {
   'index.html': withSecondBlock(nestedBlock(20)),
 }, 0);
+// --- /index.md, the markdown twin of the homepage. For an agent that sends
+// `Accept: text/markdown` src/worker.mjs makes this file the homepage, and
+// nothing renders it, so every mutation below ships a broken or stale homepage
+// to agents against a green browser experience and an otherwise green build.
+const originalTalksJson = fs.readFileSync(path.join(repoRoot, 'api/talks.json'), 'utf8');
+const ALTERNATE_LINK = '<link rel="alternate" type="text/markdown" href="/index.md">';
+assert.ok(/^#[ \t]+\S/.test(originalIndexMd),
+  'fixture assumption broken: index.md no longer starts with an ATX H1');
+assert.ok(originalIndexHtml.includes(ALTERNATE_LINK),
+  'fixture assumption broken: index.html no longer carries the rel=alternate markdown link verbatim');
+assert.ok(/^\s+Vary:\s*Accept\b/m.test(originalHeaders),
+  'fixture assumption broken: _headers no longer sets Vary: Accept');
+
+// Deleting the twin leaves the Worker with nothing to serve: / would answer
+// `Accept: text/markdown` with the HTML page, silently, forever.
+testFiles('a missing index.md fails closed', { 'index.md': null }, 1, 'index.md is missing');
+
+// Front matter is both a broken title (the H1 is no longer first) and the
+// leading edge of the generator this site does not have.
+testFiles('index.md with front matter ahead of the H1 fails closed',
+  { 'index.md': `---\ntitle: Jared Burrows\n---\n\n${originalIndexMd}` },
+  1, 'does not start with an ATX H1');
+
+// Demoting the title is the same failure without the visual tell.
+testFiles('index.md whose title is an H2 fails closed',
+  { 'index.md': originalIndexMd.replace(/^#[ \t]+/, '## ') },
+  1, 'does not start with an ATX H1');
+
+// The realistic drift: README says to add a talk to talks.js and mirror it into
+// api/talks.json — neither step mentions the twin, so both are updated here and
+// only index.md is left behind, exactly as it would happen in practice.
+testFiles('a talk added to talks.js and api/talks.json but not index.md fails closed', (() => {
+  const talk = { date: '2018-01-01', title: 'Unpublished Twin Talk', where: 'Nowhere', location: 'Nowhere, USA' };
+  return {
+    'static/js/talks.js': originalTalksJs.replace('window.TALKS = [',
+      `window.TALKS = [\n  {\n    date: '${talk.date}',\n    title: '${talk.title}',\n    where: '${talk.where}',\n    location: '${talk.location}'\n  },`),
+    'api/talks.json': `${JSON.stringify({ talks: [talk, ...JSON.parse(originalTalksJson).talks] }, null, 2)}\n`,
+  };
+})(), 1, 'does not list the talk "Unpublished Twin Talk"');
+
+// Dropping a talk from the twin alone is the same drift seen from the other
+// side, and it is the one a human proofreading index.md can cause by accident.
+testFiles('a talk deleted from index.md alone fails closed',
+  { 'index.md': originalIndexMd.split('\n').filter((line) => !line.includes('Make Your Build Great Again')).join('\n') },
+  1, 'does not list the talk "Make Your Build Great Again"');
+
+// rel=alternate is the only discovery path that survives the Worker being rolled
+// back, so losing it is a real regression even while / still serves markdown.
+testFiles('index.html without the rel=alternate markdown link fails closed',
+  { 'index.html': originalIndexHtml.replace(ALTERNATE_LINK, '') },
+  1, 'no <link rel="alternate" type="text/markdown">');
+
+// Only the head counts: a link element parsed out of the body is not part of
+// the document metadata agents read, so it must not satisfy the requirement.
+testFiles('the rel=alternate link in the body rather than the head fails closed',
+  { 'index.html': originalIndexHtml.replace(ALTERNATE_LINK, '').replace('<body>', `<body>\n    ${ALTERNATE_LINK}`) },
+  1, 'no <link rel="alternate" type="text/markdown">');
+
+// A link that resolves to a real file but the wrong one passes the existing
+// file-reference check, so only an explicit target check catches it.
+testFiles('the rel=alternate link pointing at another markdown file fails closed',
+  { 'index.html': originalIndexHtml.replace(ALTERNATE_LINK, ALTERNATE_LINK.replace('/index.md', '/auth.md')) },
+  1, 'does not point at /index.md');
+
+// Without Vary: Accept a downstream cache may reuse one representation for the
+// other — the markdown homepage served to a browser, or vice versa.
+testFiles('dropping Vary: Accept from the "/" rule fails closed',
+  { '_headers': originalHeaders.split('\n').filter((line) => line.trim() !== 'Vary: Accept').join('\n') },
+  1, 'does not set Vary: Accept');
+
+// Vary is a list header: adding a second field name must not read as removing
+// the first.
+testFiles('Vary listing Accept alongside another field passes',
+  { '_headers': originalHeaders.replace('Vary: Accept', 'Vary: Accept, Accept-Encoding') }, 0);
+
+// --- S2: and the half Vary cannot cover. Cloudflare's cache keys on the URL
+// and Accept-Encoding only — it ignores Vary for every other request header —
+// so with two representations on one URL the sole thing keeping markdown out of
+// browsers' hands is that / is never stored (Workers Assets serves it
+// max-age=0, must-revalidate). This repo has already shipped a TTL for other
+// paths twice, so the edit below is the likely one; nothing else in the build
+// would notice it.
+const HOMEPAGE_RULE = '\n/\n  Link: </static/css/home.css>; rel=preload; as=style';
+assert.ok(originalHeaders.includes(HOMEPAGE_RULE),
+  'fixture assumption broken: the _headers "/" rule no longer starts with the home.css preload');
+
+testFiles('a positive max-age on the "/" rule fails closed',
+  { '_headers': originalHeaders.replace(HOMEPAGE_RULE, '\n/\n  Cache-Control: public, max-age=3600\n  Link: </static/css/home.css>; rel=preload; as=style') },
+  1, "Cloudflare's cache ignores Vary");
+
+// s-maxage is the shared-cache TTL specifically — the one an edge reads — so it
+// must not be a way around a check written in terms of max-age.
+testFiles('a positive s-maxage on the "/" rule fails closed',
+  { '_headers': originalHeaders.replace(HOMEPAGE_RULE, '\n/\n  Cache-Control: public, s-maxage=60\n  Link: </static/css/home.css>; rel=preload; as=style') },
+  1, "Cloudflare's cache ignores Vary");
+
+// The rule that carries the TTL need not be "/" itself: /* matches / too, and
+// that is how a site-wide TTL would arrive. Every other Cache-Control is
+// stripped from the fixture so this cannot pass on the overlap check instead.
+testFiles('a positive max-age on a glob that also matches "/" fails closed',
+  { '_headers': `${originalHeaders.split('\n').filter((line) => !line.trim().startsWith('Cache-Control:')).join('\n')}`
+      .replace('/*\n  X-Content-Type-Options: nosniff', '/*\n  Cache-Control: public, max-age=3600\n  X-Content-Type-Options: nosniff') },
+  1, "Cloudflare's cache ignores Vary");
+
+// B4: delta-seconds is 1*DIGIT, so a fractional max-age is not a legal TTL —
+// but an edge that reads the leading digits stores / for a minute all the same,
+// and the check must not depend on which kind of cache is in front of the site.
+// `+600` and `6e2` are the same argument, which is why the check asks whether
+// the value is zero rather than listing the spellings of not-zero.
+for (const ttl of ['60.0', '+600', '6e2', '0x10']) {
+  testFiles(`a max-age of "${ttl}" on the "/" rule fails closed`,
+    { '_headers': originalHeaders.replace(HOMEPAGE_RULE, `\n/\n  Cache-Control: public, max-age=${ttl}\n  Link: </static/css/home.css>; rel=preload; as=style`) },
+    1, "Cloudflare's cache ignores Vary");
+}
+
+// Zero is not a TTL: pinning the Workers Assets default on / states what
+// already happens and must keep passing, or the check would forbid the very
+// fix it is asking for.
+testFiles('pinning max-age=0, must-revalidate on "/" passes',
+  { '_headers': originalHeaders.replace(HOMEPAGE_RULE, '\n/\n  Cache-Control: public, max-age=0, must-revalidate\n  Link: </static/css/home.css>; rel=preload; as=style') },
+  0);
+
+// S7: the same TTL, spelled the other ways. Cloudflare reads CDN-Cache-Control
+// for its own cache and Cloudflare-CDN-Cache-Control ahead of everything, and
+// neither reaches the browser — so a check written against Cache-Control alone
+// misses them, and misses them invisibly. stale-while-revalidate and
+// stale-if-error reopen the same window after max-age has run out, and a quoted
+// value is legal syntax that must not hide the number behind it.
+const HOMEPAGE_TTL_FORMS = [
+  ['CDN-Cache-Control', 'CDN-Cache-Control: public, max-age=600'],
+  ['Cloudflare-CDN-Cache-Control', 'Cloudflare-CDN-Cache-Control: public, max-age=600'],
+  ['stale-while-revalidate', 'Cache-Control: public, max-age=0, stale-while-revalidate=600'],
+  ['stale-if-error', 'Cache-Control: public, max-age=0, stale-if-error=600'],
+  ['a quoted max-age', 'Cache-Control: public, max-age="600"'],
+  ['a far-future Expires', 'Expires: Thu, 31 Dec 2099 23:59:59 GMT'],
+];
+for (const [what, header] of HOMEPAGE_TTL_FORMS) {
+  testFiles(`${what} on the "/" rule fails closed`,
+    { '_headers': originalHeaders.replace(HOMEPAGE_RULE, `\n/\n  ${header}\n  Link: </static/css/home.css>; rel=preload; as=style`) },
+    1, "Cloudflare's cache ignores Vary");
+}
+
+// And the other side of each: saying "do not store this" in any of those
+// spellings is the property the invariant wants, not a violation of it.
+// `Expires: 0` is the conventional "already stale", not a TTL.
+const HOMEPAGE_NO_TTL_FORMS = [
+  'CDN-Cache-Control: no-store',
+  'Cloudflare-CDN-Cache-Control: public, max-age=0, must-revalidate',
+  'Cache-Control: public, max-age="0"',
+  'Cache-Control: public, max-age=0, stale-while-revalidate=0',
+  'Expires: 0',
+];
+for (const header of HOMEPAGE_NO_TTL_FORMS) {
+  testFiles(`"${header}" on the "/" rule passes`,
+    { '_headers': originalHeaders.replace(HOMEPAGE_RULE, `\n/\n  ${header}\n  Link: </static/css/home.css>; rel=preload; as=style`) },
+    0);
+}
+
+// The TTLs the rest of the site relies on are untouched by this: none of those
+// paths is negotiated, and this must not turn into a no-caching-anywhere rule.
+testFiles('the unmodified TTLs on /static/* and /api/* still pass',
+  { '_headers': originalHeaders }, 0);
+
+// --- T5a drift guards: the twin is hand-written, so CI is the only thing that
+// can hold it to the files it restates. Each mutation below leaves a green
+// browser experience and a green build while an agent reading /index.md is
+// served something the site no longer says.
+// The sentence exists twice — once as the meta description, once as the twin's
+// summary — and nothing renders both, so only a comparison catches a one-sided
+// edit. Both sides are tested: either file can be the one that moves.
+testFiles('editing the twin summary away from the meta description fails closed',
+  { 'index.md': originalIndexMd.replace('Android and Kotlin development', 'Android development') },
+  1, "summary blockquote is not index.html's meta description");
+
+testFiles('editing the meta description away from the twin summary fails closed',
+  { 'index.html': originalIndexHtml.replace(META_DESCRIPTION, 'Jared Burrows — software engineer.') },
+  1, "summary blockquote is not index.html's meta description");
+
+// Markdown soft-wraps: a newline inside a blockquote renders as a space, so
+// re-wrapping the summary changes no rendered byte and must keep passing.
+// Without this the invariant would be a line-length rule wearing a
+// content-check hat.
+testFiles('re-wrapping the twin summary onto one line passes',
+  { 'index.md': originalIndexMd.replace(SUMMARY_BLOCKQUOTE.join('\n'), `> ${META_DESCRIPTION}`) },
+  0);
+
+// Un-quoting the summary is the B3 regression coming back: as a plain paragraph
+// it reads as prose the twin owns, which is what invites a second paragraph
+// restating it — the shape this file had when B3 was filed.
+testFiles('a summary that is no longer a blockquote fails closed',
+  { 'index.md': originalIndexMd.replace(SUMMARY_BLOCKQUOTE.join('\n'),
+    SUMMARY_BLOCKQUOTE.map((line) => line.replace(/^>[ \t]?/, '')).join('\n')) },
+  1, 'has no summary blockquote under its H1');
+
+// The reverse drift the forward check could never see: a talk is retired from
+// talks.js and api/talks.json, and the twin keeps publishing it to agents.
+testFiles('a talk deleted from talks.js but left in index.md fails closed', (() => {
+  const remaining = JSON.parse(originalTalksJson).talks.filter((talk) => talk.title !== 'Make Your Build Great Again');
+  assert.strictEqual(remaining.length, JSON.parse(originalTalksJson).talks.length - 1,
+    'fixture assumption broken: talks.js no longer publishes "Make Your Build Great Again"');
+  return {
+    'static/js/talks.js': `window.TALKS = ${JSON.stringify(remaining, null, 2)};\n`,
+    'api/talks.json': `${JSON.stringify({ talks: remaining }, null, 2)}\n`,
+  };
+})(), 1, 'lists a talk "Make Your Build Great Again" that static/js/talks.js does not publish');
+
+// Two talks share the title "The Road to Single Dex", so dropping one of them
+// is invisible to a containment test — the other heading still satisfies it.
+// Counting the headings is what makes this fail.
+testFiles('dropping one of the two same-titled talk headings fails closed',
+  { 'index.md': originalIndexMd.replace('### The Road to Single Dex\n\nGDG SF Meetup', 'GDG SF Meetup') },
+  1, 'lists the talk "The Road to Single Dex" 1 time(s) but static/js/talks.js publishes it 2 time(s)');
+
+// Only `### ` headings inside `## Talks` count as listing a talk: a title that
+// survives in prose elsewhere reads like coverage and is not.
+testFiles('a talk title kept only in prose outside the Talks section fails closed',
+  { 'index.md': `${originalIndexMd.replace('### Make Your Build Great Again\n\n', '')}\nSee also Make Your Build Great Again.\n` },
+  1, 'does not list the talk "Make Your Build Great Again"');
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

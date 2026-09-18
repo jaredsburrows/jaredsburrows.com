@@ -30,10 +30,20 @@
 # Homepage-only preload hints: Cloudflare turns these into 103 Early Hints when
 # that zone setting is on, and browsers honor them from the response headers
 # either way — both start the fetch before HTML parsing.
+#
+# Vary: Accept because / has two representations: src/worker.mjs answers
+# Accept: text/markdown with /index.md and every other request with this HTML.
+# The Worker sets the same header on the responses it builds, but not on the
+# ones it must hand back untouched — a 304 has no body to re-wrap — and those
+# come from the asset router, which is exactly what applies this file. Keeping
+# it here also means / keeps varying if the Worker is ever rolled back. It is
+# the only Vary in the file, so nothing joins with it, and the Worker appends to
+# an existing value rather than repeating it.
 /
   Link: </static/css/home.css>; rel=preload; as=style
   Link: </static/image/avatar.webp>; rel=preload; as=image
   Link: </.well-known/api-catalog>; rel="api-catalog"
+  Vary: Accept
 
 # Talk data and its OpenAPI description change about as often as the talks do,
 # so they get the same one-hour TTL as the other unversioned code assets.
