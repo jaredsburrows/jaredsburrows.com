@@ -257,15 +257,72 @@ const checkLocal = (source, reference) => {
 // (.team/SECURITY.md S11). With image TTLs at 30 days and Cloudflare purge
 // unable to reach a browser cache, the rename IS the cache-bust — so every
 // reference to a renamed asset has to move in the same commit.
-const sameOriginPath = (reference) =>
-  (reference.startsWith(`${SITE_ORIGIN}/`) ? reference.slice(SITE_ORIGIN.length) : undefined);
+//
+// Which references are ours is decided by the PARSED host, never by a string
+// prefix (S18). `https://jaredsburrows.com/…` is only one of the forms every
+// client resolves to this origin: `//jaredsburrows.com/…` (protocol-relative,
+// and an ordinary thing to write in an og:image), `http://…`,
+// `HTTPS://JaredsBurrows.COM/…` and the default-port `…:443/…` all land here
+// too, and a prefix test skips every one of them as "off-origin" — so the S11
+// rename invariant could be switched back off by REWRITING a reference rather
+// than deleting it. Host equality keeps out the lookalikes the trailing slash
+// used to handle: jaredsburrows.com.evil.test and notjaredsburrows.com are
+// different hosts and stay off-origin, and so does blog.jaredsburrows.com,
+// a real subdomain this repo does not serve. Only the one host this tree is
+// deployed to belongs in the set; adding another has to be a deliberate edit.
+const SITE_HOSTS = new Set([new URL(SITE_ORIGIN).host]);
+// Only a value carrying an authority (`scheme://host` or `//host`) can be a
+// same-origin ABSOLUTE reference. Relative values are the callers' business,
+// and resolving them here would turn prose like
+// content="width=device-width, initial-scale=1" into a file reference.
+// Backslashes count as separators because the URL parser treats them as such
+// for http(s): `https:/\jaredsburrows.com/x` loads this origin in a browser.
+const AUTHORITY = /^(?:[a-z][a-z0-9+.-]*:)?[\\/]{2}[^\\/?#]*/i;
+const sameOriginPath = (reference) => {
+  const authority = reference.match(AUTHORITY);
+  if (!authority) return undefined;
+  let url;
+  try {
+    url = new URL(reference, `${SITE_ORIGIN}/`);
+  } catch {
+    return undefined;
+  }
+  if (!SITE_HOSTS.has(url.host) || !['http:', 'https:'].includes(url.protocol)) return undefined;
+  // What follows the authority is handed on AS WRITTEN, not as the parser
+  // normalized it, so checkLocal reports the reference the author typed and
+  // still runs its own resolution and containment check over it (S12).
+  const rest = reference.slice(authority[0].length);
+  // A remainder starting with two separators would re-parse as another
+  // authority instead of a path, so that one shape passes the whole reference
+  // on and checkLocal resolves it as the absolute URL it already is.
+  return /^[\\/]{2}/.test(rest) ? reference : (rest || '/');
+};
 // Walks parsed data (JSON-LD, any object or array) for the same absolute URLs.
+//
+// Iterative and depth-capped (S20). The recursive version was called from
+// OUTSIDE the try that guards JSON.parse, so a deeply nested block threw an
+// uncaught RangeError: a raw stack trace with no bad() message and no file
+// name, and every invariant declared after the JSON-LD loop (API catalog,
+// auth.md discovery, _headers overlap, _redirects syntax) never ran at all —
+// one malformed block silently disabling four unrelated checks. Cycles are
+// impossible because JSON.parse always returns a tree, so depth was the only
+// hazard, and V8's parser is itself iterative: it hands back a 20000-deep
+// object quite happily for the walk to overflow on.
+const MAX_JSON_LD_DEPTH = 64;
 const checkSameOriginUrls = (source, value) => {
-  if (typeof value === 'string') {
-    const reference = sameOriginPath(value);
-    if (reference !== undefined && reference !== '/') checkLocal(source, reference);
-  } else if (value !== null && typeof value === 'object') {
-    for (const item of Object.values(value)) checkSameOriginUrls(source, item);
+  const queue = [[value, 0]];
+  for (let i = 0; i < queue.length; i += 1) {
+    const [node, depth] = queue[i];
+    if (typeof node === 'string') {
+      const reference = sameOriginPath(node);
+      if (reference !== undefined && reference !== '/') checkLocal(source, reference);
+    } else if (node !== null && typeof node === 'object') {
+      if (depth >= MAX_JSON_LD_DEPTH) {
+        bad(`${source} nests more than ${MAX_JSON_LD_DEPTH} levels deep — no consumer reads structured data that deep and nothing hand-written comes near it, so the block is malformed and the rest of it was not walked`);
+        return;
+      }
+      for (const item of Object.values(node)) queue.push([item, depth + 1]);
+    }
   }
 };
 for (const [file, html] of [['index.html', indexHtml], ['404.html', notFoundHtml]]) {
@@ -291,13 +348,14 @@ for (const [, reference] of headers.matchAll(/Link:\s*<([^>]+)>/g)) {
 // field carries the same absolute avatar URL the meta tags do, and a rename
 // has to move all of them together.
 //
-// Every block is parsed and reported on its own: a page carries more than one
-// (a ProfilePage plus a WebSite site name), and a check that stopped at the
-// first match would cover the second never at all. Everything below reads the
-// PARSED object, never the file text — the blocks sit next to HTML comments
-// documenting what was deliberately left out, so `grep SearchAction
-// index.html` prints 1 on a page whose JSON-LD contains no such thing, and an
-// invariant written as a text search would fire on the comment.
+// Every block is parsed and reported on its own: a page may carry more than
+// one (the Person entity, plus a WebSite block for the site name beside it),
+// and a check that stopped at the first match would cover the second never at
+// all. Everything below reads the PARSED object, never the file text — the
+// blocks sit next to HTML comments documenting what was deliberately left out,
+// so `grep SearchAction index.html` prints 1 on a page whose JSON-LD contains
+// no such thing, and an invariant written as a text search would fire on the
+// comment.
 //
 // @context is matched by URL host, not by substring: 'https://schema.org.org'
 // and 'https://schema.org.example.com' both contain the string and both mean
@@ -310,10 +368,44 @@ const namesSchemaOrg = (context) => [context].flat().some((value) => {
     return false;
   }
 });
+// The block match below stops at a literal `</script>`, but the HTML tokenizer
+// ends script data at `</script` followed by a space, tab, LF, FF, `/` or `>`
+// — so a JSON string containing `</script  >` closes the element in every
+// browser and scraper while this file reads straight past it, parses the whole
+// body as valid JSON and reports nothing (S19). What follows the breakout
+// lands where `script-src 'self' 'unsafe-inline'` lets inline script run.
+// Rejecting the sequence is also what makes the simpler match EXACT rather
+// than merely tolerable: a body containing no `</script` + terminator ends
+// where the browser ends it, so the bytes validated here are the bytes
+// consumed there, and widening the regex instead would only have turned a
+// breakout into a confusing "not valid JSON" on a truncated body.
+//
+// The comment markers are rejected for related reasons, and each is a distinct
+// tokenizer state rather than one rule repeated:
+// - `<!--` is the only entry into script-data-escaped state, and from there a
+//   nested `<script` reaches script-data-DOUBLE-escaped state, where
+//   `</script>` stops ending the element at all. Rejecting the entry closes
+//   that whole family, including the abrupt-close forms `<!-->` and `<!--->`,
+//   which contain it.
+// - `-->` leaves script-data-escaped state again (escaped-dash-dash, then
+//   `>`), and ends an HTML comment.
+// - `--!>` does NOT leave script data escaped state — `!` is "anything else"
+//   there — but the comment-end-BANG state makes it a comment terminator just
+//   like `-->`, and these blocks are written BETWEEN HTML comments. A filter
+//   that knows only `-->` is incomplete about the comment family in precisely
+//   the way this guard exists to stop being incomplete about the script family
+//   (CodeQL js/bad-tag-filter, alert 8 on PR #147).
+// Hand-written JSON-LD needs none of them: `<\/script` is the same string
+// after JSON unescaping and no tokenizer can see it.
+const SCRIPT_BREAKOUT = /<\/script[\s/>]|<!--|--!?>/i;
 for (const [file, html] of [['index.html', indexHtml], ['404.html', notFoundHtml]]) {
   const blocks = [...html.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi)];
   blocks.forEach(([, body], index) => {
     const name = `${file} JSON-LD block ${index + 1}`;
+    if (SCRIPT_BREAKOUT.test(body)) {
+      bad(`${name} contains a sequence that ends the script element early — \`</script\` followed by whitespace, \`/\` or \`>\`, or an HTML comment marker — so a browser stops reading JSON there and parses the rest as markup; write \`<\\/script\` inside the JSON string instead, which unescapes to the same text`);
+      return;
+    }
     let data;
     try {
       data = JSON.parse(body);
@@ -321,12 +413,22 @@ for (const [file, html] of [['index.html', indexHtml], ['404.html', notFoundHtml
       bad(`${name} is not valid JSON: ${error.message} — search engines drop the whole block, and the page still looks perfect`);
       return;
     }
-    for (const node of Array.isArray(data) ? data : [data]) {
-      if (!namesSchemaOrg(node?.['@context'])) {
-        bad(`${name} has @context ${JSON.stringify(node?.['@context'] ?? null)} — it must resolve to the schema.org host (a lookalike like schema.org.org parses fine and means nothing) or every field in the block is unrecognized vocabulary`);
+    // Everything past the parse runs inside a try as well: four more
+    // invariants are declared after this loop (API catalog, auth.md discovery,
+    // _headers overlap, _redirects syntax) and a throw here would skip every
+    // one of them, with a stack trace instead of a message naming the file
+    // (S20). The walk is bounded now, so this is the backstop that keeps that
+    // class of failure per-block rather than fatal, not a live path.
+    try {
+      for (const node of Array.isArray(data) ? data : [data]) {
+        if (!namesSchemaOrg(node?.['@context'])) {
+          bad(`${name} has @context ${JSON.stringify(node?.['@context'] ?? null)} — it must resolve to the schema.org host (a lookalike like schema.org.org parses fine and means nothing) or every field in the block is unrecognized vocabulary`);
+        }
       }
+      checkSameOriginUrls(name, data);
+    } catch (error) {
+      bad(`${name} could not be validated: ${error.message}`);
     }
-    checkSameOriginUrls(name, data);
   });
 }
 
