@@ -18,6 +18,7 @@ import assert from 'node:assert/strict';
 import worker, { wantsMarkdown, varyWithAccept } from './worker.mjs';
 
 // Each row is [Accept header, expected answer, why this row exists].
+/** @type {ReadonlyArray<readonly [string | null | undefined, boolean, string]>} */
 const TRUTH_TABLE = [
   ['text/markdown', true, 'the scanner probe, and the simplest thing an agent can send'],
   ['text/markdown, text/html', true, 'equally preferred is preferred enough — markdown wins ties'],
@@ -74,9 +75,13 @@ test('varyWithAccept preserves what is already there', () => {
  * A stand-in for the `assets` binding.
  *
  * @param {Record<string, Response>} files Response per site-absolute path.
- * @returns {{ ASSETS: { fetch: (input: Request) => Promise<Response> }, requests: Request[] }}
+ * @returns {{ ASSETS: { fetch: (input: Request | URL | string) => Promise<Response> }, requests: Request[] }}
+ *   The `fetch` signature is the binding's, not the narrower one this stub
+ *   happens to be called with -- a stub that accepted less than the real thing
+ *   would typecheck the Worker against a binding that does not exist.
  */
 const stubAssets = (files) => {
+  /** @type {Request[]} */
   const requests = [];
   return {
     requests,

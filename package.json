@@ -1,0 +1,19 @@
+{
+  "name": "jaredsburrows-com",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Type checking only. The site has no build step: nothing here is bundled, compiled, or shipped to the edge.",
+  "license": "Apache-2.0",
+  "//type": "MUST stay commonjs. .github/validate-*.js use require(); 'module' here would break all three validators, and they are what gate every deploy. The .mjs files in src/ are ESM by extension and are unaffected either way.",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.browser.json"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.1",
+    "typescript": "7.0.2"
+  }
+}

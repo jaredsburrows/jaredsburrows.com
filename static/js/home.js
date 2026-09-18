@@ -1,8 +1,15 @@
 (() => {
   'use strict';
 
+  // `/** @type {HTMLElement} */ (expr)` below is a type assertion, not code: it
+  // compiles to nothing and is erased before the browser sees this file. Each
+  // one marks a lookup whose element index.html is required to contain --
+  // validate-site.js is what holds that end of the contract. They are written
+  // as casts rather than runtime guards so this file behaves exactly as it did
+  // before it was type checked.
+
   // © year — auto-updates the digits only; the wording lives in the HTML.
-  document.getElementById('year').textContent = `${new Date().getFullYear()}`;
+  /** @type {HTMLElement} */ (document.getElementById('year')).textContent = `${new Date().getFullYear()}`;
 
   // Live stats (fall back to baked-in text when offline/rate-limited).
   // The baked-in numbers are a hand-maintained snapshot — no build step
@@ -14,7 +21,7 @@
       if (!response.ok) return;
       const { followers } = await response.json();
       if (Number.isFinite(followers)) {
-        document.getElementById('gh-followers').textContent =
+        /** @type {HTMLElement} */ (document.getElementById('gh-followers')).textContent =
           `${followers.toLocaleString('en-US')} followers on GitHub`;
       }
     } catch {
@@ -29,7 +36,7 @@
       const { items } = await response.json();
       const reputation = items?.[0]?.reputation;
       if (Number.isFinite(reputation)) {
-        document.getElementById('so-rep').textContent =
+        /** @type {HTMLElement} */ (document.getElementById('so-rep')).textContent =
           `${reputation.toLocaleString('en-US')} rep on Stack Overflow`;
       }
     } catch {
@@ -46,6 +53,14 @@
   // links instead of iframes.
   const LOCAL = window.location.protocol === 'file:';
 
+  /**
+   * @template {keyof HTMLElementTagNameMap} K
+   * @param {K} tag
+   * @param {string} [className]
+   * @param {string} [text]
+   * @returns {HTMLElementTagNameMap[K]} The concrete element type, which is what
+   *   lets callers below set `.src`, `.type` and `.href` without a cast.
+   */
   const el = (tag, className = '', text = '') => {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -53,6 +68,12 @@
     return node;
   };
 
+  /**
+   * @param {string} src
+   * @param {string} title
+   * @param {string} allow Permissions delegated to the frame, per provider.
+   * @returns {HTMLIFrameElement}
+   */
   const embed = (src, title, allow) => {
     const frame = el('iframe');
     frame.src = src;
@@ -75,6 +96,12 @@
     return frame;
   };
 
+  /**
+   * @param {string} href
+   * @param {string} thumb
+   * @param {string} label
+   * @returns {HTMLAnchorElement}
+   */
   const card = (href, thumb, label) => {
     const link = el('a', 'talk-ext');
     Object.assign(link, { href, target: '_blank', rel: 'noopener' });
@@ -86,6 +113,10 @@
     return link;
   };
 
+  /**
+   * @param {HTMLElement} body
+   * @param {Talk} talk
+   */
   const appendEmbeds = (body, talk) => {
     if (talk.youtube) {
       body.append(LOCAL
@@ -105,6 +136,10 @@
     }
   };
 
+  /**
+   * @param {Talk} talk
+   * @returns {HTMLDivElement}
+   */
   const buildBody = (talk) => {
     const body = el('div', 'talk-body');
     for (const text of talk.description ?? []) {
@@ -122,11 +157,11 @@
 
   const talks = [...(window.TALKS ?? [])].sort((a, b) => b.date.localeCompare(a.date));
   if (!talks.length) {
-    document.getElementById('talks-error').hidden = false;
+    /** @type {HTMLElement} */ (document.getElementById('talks-error')).hidden = false;
     return;
   }
 
-  const list = document.getElementById('talks-list');
+  const list = /** @type {HTMLElement} */ (document.getElementById('talks-list'));
   const fragment = document.createDocumentFragment();
   for (const talk of talks) {
     const item = el('div', 'talk');
@@ -162,10 +197,10 @@
       for (const other of list.querySelectorAll('.talk.open')) {
         if (other === item) continue;
         other.classList.remove('open');
-        other.querySelector('.talk-panel').inert = true;
-        const otherRow = other.querySelector('.talk-row');
+        /** @type {HTMLElement} */ (other.querySelector('.talk-panel')).inert = true;
+        const otherRow = /** @type {HTMLElement} */ (other.querySelector('.talk-row'));
         otherRow.setAttribute('aria-expanded', 'false');
-        otherRow.querySelector('.tg').textContent = '+';
+        /** @type {HTMLElement} */ (otherRow.querySelector('.tg')).textContent = '+';
       }
       if (!loaded) {
         loaded = true;

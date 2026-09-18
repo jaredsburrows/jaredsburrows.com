@@ -39,9 +39,18 @@ const path = require('path');
 const { isDeepStrictEqual } = require('util');
 
 const root = path.resolve(process.argv[2] ?? path.join(__dirname, '..'));
+/** @param {string} name Site-relative path, e.g. 'static/js/home.js'. */
 const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
+/** @type {string[]} */
 const errors = [];
+/** @param {string} message */
 const bad = (message) => errors.push(message);
+// `catch (error)` binds `unknown` under checkJs. This returns exactly what
+// `error.message` returned before -- including `undefined` for a non-Error
+// throw -- so every message below reads the same; it only moves the assertion
+// out of five template literals that were unreadable with a cast inline.
+/** @param {unknown} error @returns {string} */
+const messageOf = (error) => /** @type {Error} */ (error).message;
 
 const indexHtml = read('index.html');
 const notFoundHtml = read('404.html');
@@ -52,7 +61,12 @@ const homeJs = read('static/js/home.js');
 
 // --- CSP parity: _headers is production, the meta tag is the GH Pages mirror.
 // frame-ancestors is header-only by spec, so it may exist only in _headers.
+/**
+ * @param {string} csp
+ * @returns {Map<string, string[]>} Directive name to its sorted source list.
+ */
 const parseCsp = (csp) => {
+  /** @type {Map<string, string[]>} */
   const directives = new Map();
   for (const part of csp.split(';')) {
     const [name, ...sources] = part.trim().split(/\s+/);
@@ -66,6 +80,7 @@ const headerMatch = headers.match(/^\s*Content-Security-Policy:\s*(.+)$/m);
 if (!metaMatch) bad('index.html: meta CSP tag not found');
 if (!headerMatch) bad('_headers: Content-Security-Policy line not found');
 
+/** @type {Map<string, string[]>} */
 const headerCsp = headerMatch ? parseCsp(headerMatch[1]) : new Map();
 if (metaMatch && headerMatch) {
   const metaCsp = parseCsp(metaMatch[1]);
@@ -83,11 +98,20 @@ if (metaMatch && headerMatch) {
 
 // --- CSP coverage: every external origin the site actually uses must be
 // allowed by the right directive ('self' covers everything same-origin).
+/**
+ * @param {string} origin
+ * @param {string} source One CSP source expression, possibly a `*.` wildcard.
+ */
 const matchesSource = (origin, source) =>
   source === origin
   || (source.startsWith('https://*.') && origin.startsWith('https://')
       && origin.slice('https://'.length).endsWith(`.${source.slice('https://*.'.length)}`));
 
+/**
+ * @param {string} directive
+ * @param {string} origin
+ * @param {string} why Reported to the developer when the check fails.
+ */
 const requireCsp = (directive, origin, why) => {
   const sources = headerCsp.get(directive) ?? [];
   if (!sources.some((source) => matchesSource(origin, source))) {
@@ -179,9 +203,10 @@ for (const [directive, origin, why] of edgeInjectedOrigins) {
 // — so home.js must set the attribute on the frames it builds, in live code:
 // comments are stripped first, so a commented-out call cannot satisfy this.
 // String literals are matched before comment openers so URLs keep their //.
+/** @param {string} source @returns {string} The same source, comments blanked. */
 const stripComments = (source) => source.replace(
   /`(?:\\[\s\S]|[^\\`])*`|'(?:\\.|[^\\'\n])*'|"(?:\\.|[^\\"\n])*"|\/\*[\s\S]*?\*\/|\/\/.*/g,
-  (match) => (match.startsWith('/') ? ' ' : match));
+  (/** @type {string} */ match) => (match.startsWith('/') ? ' ' : match));
 const liveHomeJs = stripComments(homeJs);
 
 // Equal-or-tighter than the _headers policy and still referer enough for
@@ -193,7 +218,8 @@ const referrerPolicies = [
   /setAttribute\(\s*(['"`])referrerpolicy\1\s*,\s*(['"`])(?<value>[^'"`]*)\2\s*\)/gi,
   /\.referrerPolicy\s*=\s*(['"`])(?<value>[^'"`]*)\1/g,
 ].flatMap((pattern) => [...liveHomeJs.matchAll(pattern)]
-  .map((match) => match.groups.value.trim().toLowerCase()));
+  // Both patterns above define a `value` group, so a match always has one.
+  .map((match) => /** @type {{ value: string }} */ (match.groups).value.trim().toLowerCase()));
 
 // Gate on the embed hosts above, not on URL path shapes: rewriting a path must
 // not silently switch this invariant off.
@@ -226,6 +252,10 @@ const SITE_ORIGIN = 'https://jaredsburrows.com';
 // a file the site does not serve. Every real client normalizes
 // https://jaredsburrows.com/../../etc/hosts to /etc/hosts on this origin and
 // gets a 404, so a check that passes it is a gate that fails open.
+/**
+ * @param {string} source File the reference was found in, for the message.
+ * @param {string} reference The href/src as written.
+ */
 const checkLocal = (source, reference) => {
   let url;
   try {
@@ -284,6 +314,11 @@ const SITE_HOSTS = new Set([new URL(SITE_ORIGIN).host]);
 // Backslashes count as separators because the URL parser treats them as such
 // for http(s): `https:/\jaredsburrows.com/x` loads this origin in a browser.
 const AUTHORITY = /^(?:[a-z][a-z0-9+.-]*:)?[\\/]{2}[^\\/?#]*/i;
+/**
+ * @param {string} reference
+ * @returns {string | undefined} The path as written, or undefined when the
+ *   reference is not a same-origin absolute URL. Callers test `!== undefined`.
+ */
 const sameOriginPath = (reference) => {
   const authority = reference.match(AUTHORITY);
   if (!authority) return undefined;
@@ -315,7 +350,12 @@ const sameOriginPath = (reference) => {
 // hazard, and V8's parser is itself iterative: it hands back a 20000-deep
 // object quite happily for the walk to overflow on.
 const MAX_JSON_LD_DEPTH = 64;
+/**
+ * @param {string} source File the JSON-LD block came from.
+ * @param {unknown} value Any node of the parsed tree; walked breadth-first.
+ */
 const checkSameOriginUrls = (source, value) => {
+  /** @type {Array<[unknown, number]>} */
   const queue = [[value, 0]];
   for (let i = 0; i < queue.length; i += 1) {
     const [node, depth] = queue[i];
@@ -366,6 +406,7 @@ for (const [, reference] of headers.matchAll(/Link:\s*<([^>]+)>/g)) {
 // @context is matched by URL host, not by substring: 'https://schema.org.org'
 // and 'https://schema.org.example.com' both contain the string and both mean
 // nothing to a consumer, so both have to fail here.
+/** @param {unknown} context The @context value, string or array. */
 const namesSchemaOrg = (context) => [context].flat().some((value) => {
   if (typeof value !== 'string') return false;
   try {
@@ -416,7 +457,7 @@ for (const [file, html] of [['index.html', indexHtml], ['404.html', notFoundHtml
     try {
       data = JSON.parse(body);
     } catch (error) {
-      bad(`${name} is not valid JSON: ${error.message} — search engines drop the whole block, and the page still looks perfect`);
+      bad(`${name} is not valid JSON: ${messageOf(error)} — search engines drop the whole block, and the page still looks perfect`);
       return;
     }
     // Everything past the parse runs inside a try as well: four more
@@ -433,7 +474,7 @@ for (const [file, html] of [['index.html', indexHtml], ['404.html', notFoundHtml
       }
       checkSameOriginUrls(name, data);
     } catch (error) {
-      bad(`${name} could not be validated: ${error.message}`);
+      bad(`${name} could not be validated: ${messageOf(error)}`);
     }
   });
 }
@@ -442,11 +483,12 @@ for (const [file, html] of [['index.html', indexHtml], ['404.html', notFoundHtml
 // restate facts that live elsewhere, and nothing at runtime notices when one
 // drifts: a stale talks.json serves last year's talks forever, and a catalog
 // href to a renamed file is a 404 that an agent hits before any human does.
+/** @param {string} name @returns {any} Parsed tree, or null when unreadable. */
 const parseJson = (name) => {
   try {
     return JSON.parse(read(name));
   } catch (error) {
-    bad(`${name} is not valid JSON: ${error.message}`);
+    bad(`${name} is not valid JSON: ${messageOf(error)}`);
     return undefined;
   }
 };
@@ -455,13 +497,16 @@ const parseJson = (name) => {
 // talks.js"); api/talks.json is the copy the API serves. talks.js assigns to
 // window and loads under Node, which is how validate-talks.js reads it too, so
 // this compares parsed data rather than text — reformatting is not drift.
+/** @type {any} */
 let talksFromJs;
 try {
-  global.window = {};
+  // Same trick validate-talks.js uses: talks.js is a browser script that
+  // assigns to `window`, so running it under Node means providing one.
+  /** @type {any} */ (global).window = {};
   require(path.join(root, 'static/js/talks.js'));
-  talksFromJs = global.window.TALKS;
+  talksFromJs = /** @type {any} */ (global).window.TALKS;
 } catch (error) {
-  bad(`static/js/talks.js failed to load: ${error.message}`);
+  bad(`static/js/talks.js failed to load: ${messageOf(error)}`);
 }
 const talksJson = parseJson('api/talks.json');
 if (talksFromJs && talksJson && !isDeepStrictEqual(talksJson.talks, talksFromJs)) {
@@ -472,7 +517,7 @@ const catalog = parseJson('.well-known/api-catalog');
 if (catalog && !Array.isArray(catalog.linkset)) {
   bad('.well-known/api-catalog has no linkset array (RFC 9727 Section 4.2)');
 } else if (catalog) {
-  catalog.linkset.forEach((entry, index) => {
+  catalog.linkset.forEach((/** @type {any} */ entry, /** @type {number} */ index) => {
     const name = `.well-known/api-catalog entry ${index + 1}`;
     if (typeof entry.anchor !== 'string' || !entry.anchor.startsWith('https://')) {
       bad(`${name} has no anchor — nothing says which API its links describe`);
@@ -496,6 +541,7 @@ if (catalog && !Array.isArray(catalog.linkset)) {
 // RFC 9727 Section 6.2 makes application/linkset+json a MUST, and the
 // well-known URI has no extension for Cloudflare to infer a type from — the
 // _headers rule is the only thing standing between it and the wrong type.
+/** @param {string} pattern */
 const headerRuleValues = (pattern) => {
   const lines = headers.split('\n');
   const start = lines.findIndex((line) => /^\S/.test(line) && line.trim() === pattern);
@@ -536,7 +582,7 @@ for (const name of ARD_PATHS) {
   try {
     ardText.set(name, read(name));
   } catch (error) {
-    bad(`${name} is missing — the ARD manifest is published at both well-known paths (${error.message})`);
+    bad(`${name} is missing — the ARD manifest is published at both well-known paths (${messageOf(error)})`);
   }
 }
 
@@ -558,7 +604,7 @@ for (const name of ARD_PATHS) {
     bad(`${name} has no entries array, so it advertises no capability at all`);
     continue;
   }
-  manifest.entries.forEach((entry, index) => {
+  manifest.entries.forEach((/** @type {any} */ entry, /** @type {number} */ index) => {
     const label = `${name} entry ${index + 1}`;
     // ARD Section 4.3: an entry either points at a resource or inlines it —
     // never both (which one is authoritative?) and never neither (an entry
@@ -690,8 +736,11 @@ if (!fs.existsSync(twinPath)) {
       const heading = twinLines[i].match(/^###[ \t]+(.*?)[ \t]*$/);
       if (heading) listed.push(heading[1]);
     }
-    const tally = (titles) => titles.reduce((counts, title) => counts.set(title, (counts.get(title) ?? 0) + 1), new Map());
-    const published = tally((talksFromJs ?? []).map((talk) => talk.title));
+    /** @param {string[]} titles @returns {Map<string, number>} */
+    const tally = (titles) => titles.reduce(
+      (counts, title) => counts.set(title, (counts.get(title) ?? 0) + 1),
+      /** @type {Map<string, number>} */ (new Map()));
+    const published = tally((talksFromJs ?? []).map((/** @type {Talk} */ talk) => talk.title));
     const twinned = tally(listed);
     for (const title of new Set([...published.keys(), ...twinned.keys()])) {
       const inJs = published.get(title) ?? 0;
@@ -747,6 +796,11 @@ if (!homepageRule) {
 // comma-joins into a single broken value. Overlap heuristic: a glob's
 // "sample" is the glob with * removed; two patterns overlap when either
 // pattern's regex matches the other's sample.
+/**
+ * One `_headers` block: the glob it matches, and the headers it sets under it.
+ * @typedef {{ pattern: string, names: string[], set: Array<{ name: string, value: string }> }} HeaderRule
+ */
+/** @type {HeaderRule[]} */
 const rules = [];
 for (const line of headers.split('\n')) {
   if (/^\s*(#|$)/.test(line)) continue;
@@ -759,12 +813,16 @@ for (const line of headers.split('\n')) {
     else if (rules.length === 0) bad(`_headers: header line "${line.trim()}" before any pattern`);
     else {
       const trimmed = line.trim();
-      rules.at(-1).names.push(match[1]);
-      rules.at(-1).set.push({ name: match[1], value: trimmed.slice(trimmed.indexOf(':') + 1).trim() });
+      // The `rules.length === 0` branch above is what guarantees this exists.
+      const rule = /** @type {HeaderRule} */ (rules.at(-1));
+      rule.names.push(match[1]);
+      rule.set.push({ name: match[1], value: trimmed.slice(trimmed.indexOf(':') + 1).trim() });
     }
   }
 }
+/** @param {string} pattern A `_headers` glob, e.g. `/static/*`. */
 const globRegex = (pattern) => new RegExp(`^${pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`);
+/** @param {string} a @param {string} b */
 const overlaps = (a, b) => globRegex(a).test(b.replace(/\*/g, '')) || globRegex(b).test(a.replace(/\*/g, ''));
 for (let i = 0; i < rules.length; i += 1) {
   for (let j = i + 1; j < rules.length; j += 1) {
@@ -815,6 +873,7 @@ const TTL_HEADERS = ['cache-control', 'cdn-cache-control', 'cloudflare-cdn-cache
 // the same poisoning window arriving by another route.
 const TTL_DIRECTIVES = ['max-age', 's-maxage', 'stale-while-revalidate', 'stale-if-error'];
 for (const rule of rules.filter((candidate) => globRegex(candidate.pattern).test(NEGOTIATED_PATH))) {
+  /** @param {string} name @param {string} value */
   const poisons = (name, value) => bad(`_headers rule ${rule.pattern} sets ${name}: ${value} on ${NEGOTIATED_PATH} — ${NEGOTIATED_PATH} serves HTML or markdown depending on Accept, and Cloudflare's cache ignores Vary, so a stored copy is handed to every client whatever it asked for: one agent request would leave the markdown homepage in the edge cache for browsers and Googlebot. ${NEGOTIATED_PATH} must keep revalidating (max-age=0)`);
   for (const { name, value } of rule.set) {
     const header = name.toLowerCase();

@@ -1,0 +1,34 @@
+// Type checking for the code that runs on Node and on the edge: the Worker,
+// its test, and the CI validators. Browser code is checked separately by
+// tsconfig.browser.json, because loading `dom` and `@types/node` into one
+// program lets each side reference globals it will not have at runtime (and
+// their overlapping `fetch`/`Request`/`Response` declarations collide).
+//
+// noEmit is the whole point. This config checks; it never produces a file.
+// The site has no build step and nothing in it is compiled before deploy.
+{
+  "compilerOptions": {
+    "noEmit": true,
+
+    // The sources stay .js/.mjs. checkJs is what makes JSDoc load-bearing
+    // instead of decorative -- src/worker.mjs is already annotated for this.
+    "allowJs": true,
+    "checkJs": true,
+
+    "strict": true,
+
+    // Matches package.json "type": "commonjs", so TS reads each file's module
+    // kind exactly the way Node does: .js is CommonJS, .mjs is ESM.
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "target": "es2023",
+    "lib": ["es2023"],
+
+    // Explicit, so a future @types/* dependency cannot silently widen what
+    // these files are allowed to reference.
+    "types": ["node"],
+
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*", ".github/**/*.js", "types/talks.d.ts"]
+}

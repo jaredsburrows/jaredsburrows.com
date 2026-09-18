@@ -9,17 +9,26 @@
 const path = require('path');
 
 const file = path.resolve(process.argv[2] ?? path.join(__dirname, '..', 'static', 'js', 'talks.js'));
+/** @type {string[]} */
 const errors = [];
 
-global.window = {};
+// talks.js is a classic browser script that assigns to `window`, so loading it
+// under Node means giving it one. The cast is how you say that to the checker:
+// `window` is not a Node global and is not supposed to be.
+/** @type {any} */ (global).window = {};
 try {
   require(file);
 } catch (error) {
-  console.error(`✗ ${file} failed to load: ${error.message}`);
+  console.error(`✗ ${file} failed to load: ${/** @type {Error} */ (error).message}`);
   process.exit(1);
 }
 
-const talks = global.window.TALKS;
+// `any` is deliberate here and nowhere else in this file: every line below is
+// checking data that has not been validated yet, so a type asserting the shape
+// would assert away the very thing under test. types/talks.d.ts describes what
+// a *valid* entry looks like; this is what proves one is.
+/** @type {any[]} */
+const talks = /** @type {any} */ (global).window.TALKS;
 if (!Array.isArray(talks) || talks.length === 0) {
   console.error('✗ talks.js must set window.TALKS to a non-empty array');
   process.exit(1);
@@ -27,10 +36,12 @@ if (!Array.isArray(talks) || talks.length === 0) {
 
 const KNOWN_KEYS = new Set(['date', 'title', 'where', 'location', 'link', 'speakerdeck', 'youtube', 'description']);
 const seenEmbeds = new Map();
+/** @param {unknown} value */
 const isFilled = (value) => typeof value === 'string' && value.trim() !== '';
 
 talks.forEach((talk, index) => {
   const name = isFilled(talk.title) ? `"${talk.title}"` : `entry ${index + 1}`;
+  /** @param {string} message */
   const bad = (message) => errors.push(`${name}: ${message}`);
 
   for (const key of Object.keys(talk)) {

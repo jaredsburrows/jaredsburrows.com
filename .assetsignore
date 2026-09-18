@@ -9,8 +9,13 @@
 .wrangler
 node_modules
 src
+types
 CNAME
 LICENSE
 README.md
+package.json
+package-lock.json
+tsconfig.json
+tsconfig.browser.json
 wrangler.jsonc
 **/.DS_Store
