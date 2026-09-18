@@ -6,7 +6,7 @@ My blog, presentations, GitHub, and social links.
 [![Build](https://github.com/jaredsburrows/jaredsburrows.com/workflows/build/badge.svg)](https://github.com/jaredsburrows/jaredsburrows.com/actions)
 [![Twitter Follow](https://img.shields.io/twitter/follow/jaredsburrows.svg?style=social)](https://twitter.com/jaredsburrows)
 
-Personal website — no build step. Cloudflare Workers serves the repo as-is from its edge; one route, `/`, also runs `src/worker.mjs` (see "The Worker").
+Personal website — no build step. Cloudflare Workers serves the repo as-is from its edge; one route, `/`, also runs `src/worker.mts` (see "The Worker").
 
 ### Preview the website
 
@@ -67,7 +67,7 @@ type="text/markdown">` in the head points at it.
 
 ### The Worker
 
-`src/worker.mjs` is the only server code on this site. `_headers` and
+`src/worker.mts` is the only server code on this site. `_headers` and
 `_redirects` cannot branch on a request header, so the Markdown negotiation on
 `/` is a Worker: when the request names `text/markdown` in `Accept` — exactly,
 with a non-zero q, and at least as preferred as `text/html` — it returns
@@ -113,8 +113,8 @@ noticed there.
 
 Wildcards never select Markdown: a browser ends its `Accept` with `*/*;q=0.8`
 and `curl` sends nothing but `*/*`, so matching one would hand ordinary
-visitors — and Googlebot — a page with no HTML in it. `src/worker.test.mjs` is
-that truth table; run it with `node --test src/worker.test.mjs`.
+visitors — and Googlebot — a page with no HTML in it. `src/worker.test.mts` is
+that truth table; run it with `node --test src/worker.test.mts`.
 
 Both directions are checkable locally, against the real asset router:
 

@@ -14,14 +14,20 @@
 // twice with disagreeing q-values instead of taking whichever came first, which
 // made the answer depend on header order (BUGS.md B2). #279 still has the
 // `find()` version and wants the same fix.
-// They are JSDoc-annotated JavaScript rather than TypeScript on purpose: this
-// repo has no package.json, no tsconfig.json and no lockfile, so a .ts file
-// would be bundled by Wrangler but type-checked by nothing.
+// This file was JSDoc-annotated JavaScript until the repo grew a package.json,
+// a tsconfig.json and a lockfile (#149); it is TypeScript now that there is
+// something to check it. Nothing about the build changed: tsconfig.json is
+// noEmit, Wrangler bundles this with esbuild the way it bundled the .mjs, and
+// Node runs the test beside it by stripping the types — no compile step, no
+// emitted file, no dist directory.
 //
-// The extension is .mjs, not .js, so that Node reads it as an ES module without
-// a package.json to say so — that is what lets src/worker.test.mjs import these
-// functions directly. Nothing here imports a `cloudflare:` module or touches
-// global state at load time, so importing it outside workerd is safe.
+// The extension is .mts, not .ts, for the same reason it was .mjs and not .js:
+// package.json says "type": "commonjs" (it must -- the .github validators are
+// CommonJS), and under that Node reads a .ts file as CommonJS, where the
+// `export default` below throws on load. .mts is the ESM counterpart, and it is
+// what lets src/worker.test.mts import these functions directly. Nothing here
+// imports a `cloudflare:` module or touches global state at load time, so
+// importing it outside workerd is safe.
 
 /** The media type an agent must name exactly to be served markdown. */
 const MARKDOWN_MEDIA_TYPE = 'text/markdown';
@@ -75,13 +81,13 @@ const NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
  */
 const CONDITIONAL_HEADERS = ['if-none-match', 'if-modified-since'];
 
-/**
- * One entry of a parsed `Accept` header.
- *
- * @typedef {object} AcceptEntry
- * @property {string} type Media type or wildcard, lower-cased.
- * @property {number} quality Its q-value; 1 when the header does not give one.
- */
+/** One entry of a parsed `Accept` header. */
+interface AcceptEntry {
+  /** Media type or wildcard, lower-cased. */
+  type: string;
+  /** Its q-value; 1 when the header does not give one. */
+  quality: number;
+}
 
 /**
  * Parses `Accept` into media types with their q-values, lower-cased, ignoring
@@ -92,11 +98,10 @@ const CONDITIONAL_HEADERS = ['if-none-match', 'if-modified-since'];
  * serve a page over a bad `;q=` would turn a cosmetic client bug into a broken
  * request.
  *
- * @param {string} header Raw `Accept` header value.
- * @returns {AcceptEntry[]}
+ * @param header Raw `Accept` header value.
  */
-function parseAccept(header) {
-  const entries = [];
+function parseAccept(header: string): AcceptEntry[] {
+  const entries: AcceptEntry[] = [];
   for (const part of header.split(',')) {
     const [rawType, ...parameters] = part.split(';');
     const type = rawType.trim().toLowerCase();
@@ -128,11 +133,8 @@ function parseAccept(header) {
  * representation every client can read. Duplicates that agree state one value,
  * not two, so they are not ambiguous and go through normally.
  *
- * @param {readonly AcceptEntry[]} entries
- * @param {string} type
- * @returns {number | null}
  */
-function exactQuality(entries, type) {
+function exactQuality(entries: readonly AcceptEntry[], type: string): number | null {
   const named = entries.filter((entry) => entry.type === type);
   if (named.length === 0) return 0;
   const [{ quality }] = named;
@@ -143,11 +145,8 @@ function exactQuality(entries, type) {
  * The q-value `type` gets including the `text/` and catch-all wildcards a
  * browser sends, or `null` if any of the three is ambiguous.
  *
- * @param {readonly AcceptEntry[]} entries
- * @param {string} type
- * @returns {number | null}
  */
-function effectiveQuality(entries, type) {
+function effectiveQuality(entries: readonly AcceptEntry[], type: string): number | null {
   const group = `${type.split('/')[0]}/*`;
   const qualities = [
     exactQuality(entries, type),
@@ -157,10 +156,10 @@ function effectiveQuality(entries, type) {
   // Math.max would read a refusal as 0, which is the unsafe direction here: an
   // ambiguous text/html must not lower the bar markdown has to clear.
   if (qualities.includes(null)) return null;
-  // `includes` is not a narrowing form, so the cast is what carries the fact
-  // the line above just established -- that no null survives here -- to the
-  // type checker. It erases to nothing; `qualities` is untouched at runtime.
-  return Math.max(.../** @type {number[]} */ (qualities));
+  // `includes` is not a narrowing form, so the assertion is what carries the
+  // fact the line above just established -- that no null survives here -- to
+  // the type checker. It erases to nothing; `qualities` is untouched at runtime.
+  return Math.max(...(qualities as number[]));
 }
 
 /**
@@ -175,10 +174,9 @@ function effectiveQuality(entries, type) {
  * everything that does not ask for markdown by name — and for everything that
  * asks ambiguously (see `exactQuality`).
  *
- * @param {string | null | undefined} accept Raw `Accept` header value, if any.
- * @returns {boolean}
+ * @param accept Raw `Accept` header value, if any.
  */
-export function wantsMarkdown(accept) {
+export function wantsMarkdown(accept: string | null | undefined): boolean {
   if (!accept) return false;
   const entries = parseAccept(accept);
   const markdown = exactQuality(entries, MARKDOWN_MEDIA_TYPE);
@@ -198,10 +196,9 @@ export function wantsMarkdown(accept) {
  * already means "never reuse this", which is strictly stronger than anything
  * adding a field name could say.
  *
- * @param {string | null | undefined} existing Current `Vary` value, if any.
- * @returns {string}
+ * @param existing Current `Vary` value, if any.
  */
-export function varyWithAccept(existing) {
+export function varyWithAccept(existing: string | null | undefined): string {
   if (!existing || existing.trim() === '') return 'Accept';
   const fields = existing.split(',').map((field) => field.trim());
   if (fields.some((field) => field === '*')) return existing;
@@ -209,14 +206,25 @@ export function varyWithAccept(existing) {
   return `${existing}, Accept`;
 }
 
+/**
+ * `assets.binding` from wrangler.jsonc: the static asset router, as a binding.
+ *
+ * Declared here rather than pulled from `@cloudflare/workers-types`, which
+ * declares 206 globals and cannot share a program with `@types/node` -- and the
+ * test beside this file runs under `node --test` and imports this module, so the
+ * two are necessarily one program. Everything this Worker touches (`Request`,
+ * `Response`, `Headers`, `URL`) is standard in both runtimes; `ASSETS` was the
+ * only Workers-specific name, and this is it.
+ */
+interface Env {
+  ASSETS: { fetch: (input: Request | URL | string) => Promise<Response> };
+}
+
 export default {
   /**
-   * @param {Request} request Incoming request; only `/` reaches this handler.
-   * @param {{ ASSETS: { fetch: (input: Request | URL | string) => Promise<Response> } }} env
-   *   `assets.binding` from wrangler.jsonc: the static asset router, as a binding.
-   * @returns {Promise<Response>}
+   * @param request Incoming request; only `/` reaches this handler.
    */
-  async fetch(request, env) {
+  async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     // Retrieval only: negotiating a representation is meaningless for a request
     // that is not asking for one. `/index.html` is absent on purpose — the asset

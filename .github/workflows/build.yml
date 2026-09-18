@@ -95,7 +95,7 @@ jobs:
       # in the browser direction would serve a page with no HTML in it to every
       # visitor and to Googlebot. No deploy can tell you that; this truth table can.
       - name: Test the Worker
-        run: node --test src/worker.test.mjs
+        run: node --test src/worker.test.mts
 
       # Credential-less config/asset validation: proves `wrangler deploy` would succeed
       # without ever exposing the Cloudflare token to PR-triggered runs.
