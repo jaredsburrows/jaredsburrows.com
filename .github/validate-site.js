@@ -656,7 +656,7 @@ if (!fs.existsSync(authMdPath)) {
   }
 }
 
-// --- /index.md, the markdown twin of the homepage. src/worker.mjs serves it
+// --- /index.md, the markdown twin of the homepage. src/worker.mts serves it
 // from / when the request names `text/markdown` in `Accept`, so for an agent
 // asking for markdown this file IS the homepage — and no browser ever renders
 // it, which makes every failure here invisible outside CI. The twin is
@@ -775,7 +775,7 @@ if (!headMatch) {
 
 // And the cache half: / has two representations now, so a downstream cache that
 // never sees the Accept header would be free to hand the markdown to a browser.
-// src/worker.mjs sets Vary on the responses it builds, but the ones it hands
+// src/worker.mts sets Vary on the responses it builds, but the ones it hands
 // back untouched (a 304 has no body to re-wrap) get it only from here — and
 // this is also what keeps / varying if the Worker is ever rolled back. Vary is
 // only half the protection; the TTL half is checked with the other _headers
@@ -836,7 +836,7 @@ for (let i = 0; i < rules.length; i += 1) {
 }
 
 // --- _headers: / is content-negotiated, so it must never be given a TTL.
-// Two representations share one URL (src/worker.mjs answers Accept:
+// Two representations share one URL (src/worker.mts answers Accept:
 // text/markdown with index.md, everything else with the HTML), and Vary does
 // not protect them from each other at the edge: Cloudflare's cache keys on the
 // URL and Accept-Encoding, and ignores Vary for every other request header —
@@ -852,7 +852,7 @@ for (let i = 0; i < rules.length; i += 1) {
 // `Cache-Control: public, max-age=0, must-revalidate` on / states the default
 // rather than changing it.
 //
-// The Worker pins the same value on the markdown response (src/worker.mjs,
+// The Worker pins the same value on the markdown response (src/worker.mts,
 // SECURITY.md S6), which covers the route this check cannot see — that response
 // republishes /index.md's headers under / — and this check covers the route the
 // pin cannot: a TTL on / itself, where the HTML branch hands the asset router's

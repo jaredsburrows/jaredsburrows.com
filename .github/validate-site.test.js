@@ -837,7 +837,7 @@ testFiles('an ordinarily nested JSON-LD block passes', {
   'index.html': withSecondBlock(nestedBlock(20)),
 }, 0);
 // --- /index.md, the markdown twin of the homepage. For an agent that sends
-// `Accept: text/markdown` src/worker.mjs makes this file the homepage, and
+// `Accept: text/markdown` src/worker.mts makes this file the homepage, and
 // nothing renders it, so every mutation below ships a broken or stale homepage
 // to agents against a green browser experience and an otherwise green build.
 const originalTalksJson = fs.readFileSync(path.join(repoRoot, 'api/talks.json'), 'utf8');

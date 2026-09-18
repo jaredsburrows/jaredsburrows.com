@@ -1,4 +1,4 @@
-// Unit tests for src/worker.mjs — the content negotiation that decides whether
+// Unit tests for src/worker.mts — the content negotiation that decides whether
 // `/` is HTML or Markdown. This is the half of the feature a deploy cannot tell
 // you about: the wrong answer here is invisible in a browser (it looks like the
 // site always worked) and wrong for every agent, or — far worse — right for
@@ -6,7 +6,7 @@
 // HTML in it. The truth table below is the contract; `npx wrangler dev` then
 // proves the same answers end to end against the real asset router.
 //
-// Run: node --test src/worker.test.mjs
+// Run: node --test src/worker.test.mts
 //
 // The Worker is imported directly, stub `env.ASSETS` and all: nothing in it
 // imports a `cloudflare:` module or touches global state at load time, so Node
@@ -15,11 +15,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import worker, { wantsMarkdown, varyWithAccept } from './worker.mjs';
+import worker, { wantsMarkdown, varyWithAccept } from './worker.mts';
 
 // Each row is [Accept header, expected answer, why this row exists].
-/** @type {ReadonlyArray<readonly [string | null | undefined, boolean, string]>} */
-const TRUTH_TABLE = [
+const TRUTH_TABLE: ReadonlyArray<readonly [string | null | undefined, boolean, string]> = [
   ['text/markdown', true, 'the scanner probe, and the simplest thing an agent can send'],
   ['text/markdown, text/html', true, 'equally preferred is preferred enough — markdown wins ties'],
   ['text/markdown;q=0.9, text/html;q=0.8', true, 'markdown ranked above HTML'],
@@ -74,19 +73,20 @@ test('varyWithAccept preserves what is already there', () => {
 /**
  * A stand-in for the `assets` binding.
  *
- * @param {Record<string, Response>} files Response per site-absolute path.
- * @returns {{ ASSETS: { fetch: (input: Request | URL | string) => Promise<Response> }, requests: Request[] }}
- *   The `fetch` signature is the binding's, not the narrower one this stub
- *   happens to be called with -- a stub that accepted less than the real thing
- *   would typecheck the Worker against a binding that does not exist.
+ * @param files Response per site-absolute path.
  */
-const stubAssets = (files) => {
-  /** @type {Request[]} */
-  const requests = [];
+const stubAssets = (files: Record<string, Response>): {
+  // The `fetch` signature is the binding's, not the narrower one this stub
+  // happens to be called with -- a stub that accepted less than the real thing
+  // would typecheck the Worker against a binding that does not exist.
+  ASSETS: { fetch: (input: Request | URL | string) => Promise<Response> };
+  requests: Request[];
+} => {
+  const requests: Request[] = [];
   return {
     requests,
     ASSETS: {
-      async fetch(input) {
+      async fetch(input: Request | URL | string) {
         const request = input instanceof Request ? input : new Request(input);
         requests.push(request);
         const response = files[new URL(request.url).pathname];

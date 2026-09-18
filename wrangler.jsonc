@@ -1,6 +1,6 @@
 {
   // Static site plus one route of server code. Cloudflare serves the files in
-  // this directory from its edge; src/worker.mjs runs on "/" and only "/"
+  // this directory from its edge; src/worker.mts runs on "/" and only "/"
   // (assets.run_worker_first), where it answers Accept: text/markdown with the
   // markdown twin of the homepage. Every other path is matched by the asset
   // router before any code runs, so those requests stay unbilled — the Worker
@@ -9,7 +9,7 @@
   "account_id": "23fd1f78e6c723b48b52bd073092907a",
   "compatibility_date": "2026-07-25",
   "workers_dev": false,
-  "main": "src/worker.mjs",
+  "main": "src/worker.mts",
   "assets": {
     "directory": ".",
     "not_found_handling": "404-page",

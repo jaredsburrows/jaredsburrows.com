@@ -11,7 +11,7 @@
     "noEmit": true,
 
     // The sources stay .js/.mjs. checkJs is what makes JSDoc load-bearing
-    // instead of decorative -- src/worker.mjs is already annotated for this.
+    // instead of decorative -- src/worker.mts is already annotated for this.
     "allowJs": true,
     "checkJs": true,
 
@@ -21,6 +21,13 @@
     // kind exactly the way Node does: .js is CommonJS, .mjs is ESM.
     "module": "nodenext",
     "moduleResolution": "nodenext",
+
+    // src/worker.test.mts imports './worker.mts' -- the real filename, because
+    // Node strips types in place and does no extension rewriting: it opens
+    // exactly the path written. TypeScript otherwise expects the extension of a
+    // file that would be emitted, and nothing is emitted here. Safe only
+    // alongside noEmit above, which is why tsc requires the two together.
+    "allowImportingTsExtensions": true,
     "target": "es2023",
     "lib": ["es2023"],
 
