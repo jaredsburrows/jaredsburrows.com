@@ -50,6 +50,9 @@ Gradle Summit — Palo Alto, CA, USA — 2017-06-22.
 - The same talks as structured JSON: [`/api/talks.json`](/api/talks.json),
   described by [`/api/openapi.json`](/api/openapi.json) and advertised in
   [`/.well-known/api-catalog`](/.well-known/api-catalog).
+- Everything this site offers an agent, in one manifest:
+  [`/.well-known/ard.json`](/.well-known/ard.json), also served at
+  [`/.well-known/ai-catalog.json`](/.well-known/ai-catalog.json).
 - Authentication: none, ever. See [`/auth.md`](/auth.md).
 - Crawl and training permissions: [`/robots.txt`](/robots.txt).
 
