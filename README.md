@@ -98,7 +98,7 @@ Two things hold that down, because there are two ways in. The Worker pins
 `Cache-Control: public, max-age=0, must-revalidate` on the Markdown response:
 that response is `/index.md`'s headers republished under `/`, so without the pin
 a TTL on `/index.md` in `_headers` — which looks exactly as reasonable as the
-one on `/static/js/*` — would land on `/`. And `validate-site.js` fails the
+one on `/static/js/*` — would land on `/`. And `validate-site.ts` fails the
 build on any `Cache-Control`, `CDN-Cache-Control`, `Cloudflare-CDN-Cache-Control`
 or `Expires` that gives `/` itself a TTL — `max-age`, `s-maxage`,
 `stale-while-revalidate` or `stale-if-error`, in `/`'s own rule or any glob that
