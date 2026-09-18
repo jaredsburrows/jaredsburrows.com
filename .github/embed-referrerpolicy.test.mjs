@@ -14,9 +14,13 @@
 // cannot answer any of those, and two of its answers (B12, S28) were wrong
 // about correct code. So this file stops reading the source and reads the DOM:
 // load the real page, drive the accordion so the lazily-built embeds mount,
-// and look at the iframes that exist. Anything that leaves a real frame
+// and look at the elements that exist. Anything that leaves a real frame
 // unprotected fails here by construction, whatever the source looks like.
-
+//
+// Two scopes, deliberately: the *presence* requirement is for cross-origin
+// iframes, which are what break without a referer, while the *value* allowlist
+// runs over every `[referrerpolicy]` element on the page, because a weak value
+// leaks the referring URL from an <a> or an <img> just as far (S35).
 //
 // jsdom, not a browser: no binary to download in CI, and mounting elements and
 // reading attributes is all this needs. It is an exact-pinned devDependency in
@@ -155,6 +159,15 @@ const iframes = () => [...page.document.querySelectorAll('iframe')]
   // scripting is on, and it must not be held to a policy its own page can't set.
   .filter((frame) => !frame.closest('noscript'));
 
+// Every element that sets a referrerpolicy, not just the frames. The attribute
+// is valid on <a>, <area>, <img>, <link> and <script> too, and a weak value on
+// any of them leaks the referring URL exactly as far as a weak value on an
+// iframe does. Scoping this to `iframe` is what let S35 through: `buildBody()`
+// builds a live outbound <a> per talk and `card()` an <img>, and neither was
+// being looked at.
+const referrerPolicyCarriers = () => [...page.document.querySelectorAll('[referrerpolicy]')]
+  .filter((node) => !node.closest('noscript'));
+
 const crossOriginIframes = () => iframes().flatMap((frame) => {
   const src = frame.getAttribute('src') ?? '';
   let origin;
@@ -195,16 +208,27 @@ test('expanding the accordion mounts an embed for every talk that has one', () =
   }
 });
 
-// --- The invariant itself.
-test('every cross-origin iframe in the mounted page carries a referer-preserving referrerpolicy', () => {
+// --- The invariant itself, in two halves. Presence is a property of the embed
+// frames: they are the ones that break without a referer. The value allowlist
+// is a property of the whole page, because leaking the referring URL is a
+// defect wherever the attribute is written.
+test('every cross-origin iframe in the mounted page carries a referrerpolicy', () => {
   const frames = crossOriginIframes();
   assert.ok(frames.length > 0, 'the mounted page has no cross-origin iframes to check');
-  for (const { frame, src, origin } of frames) {
-    const policy = frame.getAttribute('referrerpolicy');
-    assert.ok(policy !== null,
+  for (const { frame, src } of frames) {
+    assert.ok(frame.getAttribute('referrerpolicy') !== null,
       `iframe ${src} has no referrerpolicy attribute — it inherits the document policy, and a same-origin one strips the referer cross-origin (YouTube Error 153)`);
+  }
+});
+
+test('every element in the mounted page that sets a referrerpolicy sets an allowed one', () => {
+  const carriers = referrerPolicyCarriers();
+  assert.ok(carriers.length > 0, 'the mounted page sets referrerpolicy on nothing at all');
+  for (const node of carriers) {
+    const policy = /** @type {string} */ (node.getAttribute('referrerpolicy'));
+    const where = `<${node.localName}${node.getAttribute('src') || node.getAttribute('href') ? ` ${node.getAttribute('src') ?? node.getAttribute('href')}` : ''}>`;
     assert.ok(ALLOWED_REFERRER_POLICIES.includes(policy.toLowerCase()),
-      `iframe ${src} (${origin}) has referrerpolicy '${policy}' — only ${ALLOWED_REFERRER_POLICIES.join(' or ')} may be used (weaker values leak more than the origin; no-referrer/same-origin bring back Error 153, and a padded or misspelled value is the invalid-value default, i.e. no attribute at all)`);
+      `${where} has referrerpolicy '${policy}' — only ${ALLOWED_REFERRER_POLICIES.join(' or ')} may be used (weaker values leak more than the origin; no-referrer/same-origin bring back Error 153 on the embeds, and a padded or misspelled value is the invalid-value default, i.e. no attribute at all)`);
   }
 });
 
