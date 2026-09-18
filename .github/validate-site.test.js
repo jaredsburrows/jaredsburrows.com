@@ -1,18 +1,19 @@
 #!/usr/bin/env node
-// Regression tests for the embed-referrerpolicy invariant in
-// `.github/validate-site.js` (fixed for B3/S1/S2 in 85cb0ab) and for the
-// per-provider `allow` list in `static/js/home.js` (T5/S6, commit a64a111).
+// Regression tests for the cross-file invariants in
+// `.github/validate-site.js`: the per-provider `allow` list in
+// `static/js/home.js` (T5/S6, commit a64a111), CSP coverage, file references,
+// JSON-LD, the markdown twin, the API catalog, the ARD manifest, the Q14 OAuth
+// pins, `_headers` overlap and `_redirects` syntax.
 //
 // Each mutation test copies the real site files into a scratch directory,
-// applies one targeted mutation to a copy of home.js, and asserts the
-// validator's exit code (and, where relevant, its stderr message) match what
-// the invariant is supposed to catch. Nothing under the real repo tree is
-// ever modified.
+// applies one targeted mutation to a copy, and asserts the validator's exit
+// code (and, where relevant, its stderr message) match what the invariant is
+// supposed to catch. Nothing under the real repo tree is ever modified.
 //
-// B4 and B5 were the two ways containment passed a broken site — the attribute
-// on a decoy element, and the attribute on a line after `return frame;` — and
-// both are covered below, each beside a legal rewrite that must stay green so
-// the fix cannot drift into over-fitting the current formatting.
+// The embed-referrerpolicy cases that used to lead this file are gone with the
+// text scan they covered (B3-B5, B7-B12, S23-S28). That invariant is now a
+// behavioral one: `.github/embed-referrerpolicy.test.mjs` mounts the page in a
+// DOM and reads the iframes it really built.
 //
 // Usage: node .github/validate-site.test.js
 'use strict';
@@ -29,10 +30,6 @@ const validator = path.join(__dirname, 'validate-site.js');
 // what these tests probe — sees every asset it expects.
 const skipTopLevel = new Set(['.git', '.github', '.idea', '.wrangler', 'node_modules']);
 const originalHomeJs = fs.readFileSync(path.join(repoRoot, 'static/js/home.js'), 'utf8');
-
-const REFERRERPOLICY_LINE = "    frame.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');";
-assert.ok(originalHomeJs.includes(REFERRERPOLICY_LINE),
-  'fixture assumption broken: home.js no longer contains the expected referrerpolicy line verbatim');
 
 const originalHeaders = fs.readFileSync(path.join(repoRoot, '_headers'), 'utf8');
 const originalIndexHtml = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
@@ -158,112 +155,6 @@ const test = (name, mutate, expectCode, expectStderrIncludes) => {
 
 // --- Control: unmodified home.js must pass.
 test('unmodified home.js passes', (src) => src, 0);
-
-// --- B3 (fixed 85cb0ab): a //-commented call is inert and must fail closed.
-test('// -commented referrerpolicy call fails closed', (src) =>
-  src.replace(REFERRERPOLICY_LINE, `    // ${REFERRERPOLICY_LINE.trim()}`),
-  1, 'without a live setAttribute');
-
-// --- B3 (fixed 85cb0ab): a /* */ block-commented call must fail closed.
-test('/* */ -commented referrerpolicy call fails closed', (src) =>
-  src.replace(REFERRERPOLICY_LINE, `    /* ${REFERRERPOLICY_LINE.trim()} */`),
-  1, 'without a live setAttribute');
-
-// --- B3 (fixed 85cb0ab): a live weak value beside the strict literal
-// surviving only in a comment must fail closed on the weak value.
-test('live unsafe-url beside a commented-out strict literal fails closed', (src) =>
-  src.replace(REFERRERPOLICY_LINE,
-    `    // was: ${REFERRERPOLICY_LINE.trim()}\n    frame.setAttribute('referrerpolicy', 'unsafe-url');`),
-  1, "sets referrerpolicy 'unsafe-url'");
-
-// --- S1 (fixed 85cb0ab): the `.referrerPolicy =` property form with a weak
-// value must fail closed.
-test('.referrerPolicy = "no-referrer-when-downgrade" fails closed', (src) =>
-  src.replace(REFERRERPOLICY_LINE, "    frame.referrerPolicy = 'no-referrer-when-downgrade';"),
-  1, "sets referrerpolicy 'no-referrer-when-downgrade'");
-
-// --- The `.referrerPolicy =` property form with the strict value must pass.
-test('.referrerPolicy = "strict-origin-when-cross-origin" passes', (src) =>
-  src.replace(REFERRERPOLICY_LINE, "    frame.referrerPolicy = 'strict-origin-when-cross-origin';"),
-  0);
-
-// --- S2 (fixed 85cb0ab): rewriting the embed URL paths (while keeping the
-// hosts) plus deleting the attribute must still fail closed.
-test('rewritten embed paths with the attribute deleted still fail closed', (src) => {
-  let out = src.replace(`${REFERRERPOLICY_LINE}\n`, '');
-  out = out.replace('youtube-nocookie.com/embed/', 'youtube-nocookie.com/watch/');
-  out = out.replace(/speakerdeck\.com\/player\//g, 'speakerdeck.com/show/');
-  return out;
-}, 1, 'without a live setAttribute');
-
-// --- Benign variant: double quotes + extra whitespace must still pass.
-test('double-quoted / extra-whitespace call passes', (src) =>
-  src.replace(REFERRERPOLICY_LINE,
-    '    frame.setAttribute(  "referrerpolicy" ,   "strict-origin-when-cross-origin"  ) ;'),
-  0);
-
-// --- B4/B5 (fixed): containment is not the invariant. The call has to be
-// reachable code inside the iframe builder AND aimed at the frame the builder
-// returns, so the two mutations below — which the old check read as green —
-// must fail, while the legal rewrites after them must not.
-const BUILDER_LINE = '  const embed = (src, title, allow) => {';
-const RETURN_LINE = '    return frame;';
-const CARD_LINE = '  const card = (href, thumb, label) => {';
-for (const [name, line] of [['builder', BUILDER_LINE], ['return', RETURN_LINE], ['card', CARD_LINE]]) {
-  assert.strictEqual(originalHomeJs.split(`${line}\n`).length, 2,
-    `fixture assumption broken: home.js does not contain the ${name} line exactly once`);
-}
-
-// B4: the same call on an unrelated element, anywhere else in the file, with
-// the builder's own call deleted. The iframes that reach the page carry no
-// referrerpolicy at all, so Error 153 is back.
-test('B4: a decoy element elsewhere in the file does not satisfy the invariant', (src) =>
-  src.replace(`${REFERRERPOLICY_LINE}\n`, '').replace(CARD_LINE, [
-    "  const decoy = el('div');",
-    "  decoy.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');",
-    CARD_LINE,
-  ].join('\n')),
-  1, 'without a live setAttribute');
-
-// B4, harder: the decoy sits inside the builder, on the line the real call
-// used to occupy — so "a live call in embed()" is true and the invariant is
-// still violated. Only tying the target to the returned frame catches this.
-test('B4: a decoy element inside the builder does not satisfy the invariant', (src) =>
-  src.replace(REFERRERPOLICY_LINE, [
-    "    const decoy = el('div');",
-    "    decoy.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');",
-  ].join('\n')),
-  1, 'without a live setAttribute');
-
-// B5: the right call, on the right frame, on a line that never runs. `node
-// --check` is happy — dead code after `return` is valid JS — and the frame
-// handed to the page has no referrerpolicy.
-test('B5: the call after `return frame;` (unreachable) fails closed', (src) =>
-  src.replace(`${REFERRERPOLICY_LINE}\n`, '')
-    .replace(`${RETURN_LINE}\n`, `${RETURN_LINE}\n${REFERRERPOLICY_LINE}\n`),
-  1, 'without a live setAttribute');
-
-// Green control for both: renaming the builder's local is a legal rewrite that
-// changes the identifier the check has to follow, and must stay green — the
-// anchor is "the frame this function returns", not the name `frame`.
-test('B4/B5 control: renaming the builder local from `frame` passes', (src) => {
-  const start = src.indexOf(BUILDER_LINE);
-  const end = src.indexOf(RETURN_LINE) + RETURN_LINE.length;
-  const renamed = src.slice(start, end).replace(/\bframe\b/g, 'iframeEl');
-  assert.ok(renamed.includes("iframeEl.setAttribute('referrerpolicy'") && renamed.includes('return iframeEl;'),
-    'fixture assumption broken: renaming the builder local did not rewrite both the call and the return');
-  return src.slice(0, start) + renamed + src.slice(end);
-}, 0);
-
-// Green control: renaming the builder itself. The check finds it by what it
-// does — the innermost function that creates an iframe — so `embed` is not a
-// name the site owes CI.
-test('B4/B5 control: renaming the builder from `embed` passes', (src) => {
-  const renamed = src.replace(BUILDER_LINE, '  const buildFrame = (src, title, allow) => {').split(': embed(').join(': buildFrame(');
-  assert.strictEqual(renamed.split('buildFrame(').length, 3,
-    'fixture assumption broken: both embed() call sites were not renamed');
-  return renamed;
-}, 0);
 
 // --- T5/S6: exact per-provider allow list at each embed() call site.
 test('T5: Speaker Deck allow is fullscreen-only, YouTube unchanged', (src) => {

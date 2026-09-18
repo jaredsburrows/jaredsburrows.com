@@ -9,7 +9,9 @@
 // - home.js targeting an id index.html no longer has (emptied the live
 //   Presentations section in July 2026)
 // - an embed iframe built without an explicit referrerpolicy, which broke
-//   both YouTube talks with Error 153 in September 2026
+//   both YouTube talks with Error 153 in September 2026 — that one is now
+//   asserted against a mounted DOM in .github/embed-referrerpolicy.test.mjs
+//   instead of here; see the note where it used to live
 // - a page or _headers preload referencing a local file that doesn't exist,
 //   including the same-origin ABSOLUTE references (og:image, twitter:image,
 //   the JSON-LD image) a rename leaves dangling: image TTLs are 30 days and a
@@ -200,148 +202,19 @@ for (const [directive, origin, why] of edgeInjectedOrigins) {
 // --- Embed referer: the talk iframes are cross-origin, and YouTube's player
 // refuses to configure without a referer. A document Referrer-Policy of
 // same-origin sends none cross-origin — a Cloudflare zone rule applied exactly
-// that for a month (B1/B2) — so home.js sets the attribute on the frames it
+// that for a month (B1/B2) — so home.js pins referrerpolicy on the frames it
 // builds and they keep their referer whatever the document policy later says.
-// Containment is NOT the invariant: B3, B4 and B5 were each a containment test
-// reading green over a site that had stopped setting the attribute at all. The
-// call must be LIVE (comments are stripped first), REACHABLE (inside the
-// iframe builder, ahead of the return that hands the frame out — a statement
-// after `return` is valid JS that never runs) and AIMED at the frame that is
-// returned (an attribute on some other element protects nothing). Everything
-// else about the call is free: either quote style, any whitespace, either DOM
-// spelling, and any name for the builder or its local.
-// String literals are matched before comment openers so URLs keep their //.
-/** @param {string} source @returns {string} The same source, comments blanked. */
-const stripComments = (source) => source.replace(
-  /`(?:\\[\s\S]|[^\\`])*`|'(?:\\.|[^\\'\n])*'|"(?:\\.|[^\\"\n])*"|\/\*[\s\S]*?\*\/|\/\/.*/g,
-  (/** @type {string} */ match) => (match.startsWith('/') ? ' ' : match));
-const liveHomeJs = stripComments(homeJs);
-
-// Same-length blanking of string bodies: offsets stay in liveHomeJs
-// coordinates, while a brace or the word `return` inside a literal cannot be
-// read as structure. home.js contains no regular-expression literals; a `{`
-// inside one would need the same treatment, and until then the shape checks
-// below fail closed rather than green when they cannot read the file.
-const maskLiterals = (source) => source.replace(
-  /`(?:\\[\s\S]|[^\\`])*`|'(?:\\.|[^\\'\n])*'|"(?:\\.|[^\\"\n])*"/g,
-  (match) => `${match[0]}${' '.repeat(match.length - 2)}${match[0]}`);
-const maskedHomeJs = maskLiterals(liveHomeJs);
-
-// `{` at `open` to its partner, over the masked source.
-const blockEnd = (source, open) => {
-  let depth = 0;
-  for (let index = open; index < source.length; index += 1) {
-    if (source[index] === '{') depth += 1;
-    else if (source[index] === '}' && (depth -= 1) === 0) return index;
-  }
-  return -1;
-};
-
-// Function bodies by shape, never by name: renaming `embed` must not switch
-// the invariant off, and code outside the builder must not be able to satisfy
-// it. Arrow and `function` forms both count; a block that is merely nested
-// (if/for) does not, so `depth === 1` below really is the builder's own level.
-const functionBodies = [
-  /(?:\([^()]*\)|\b[A-Za-z_$][\w$]*)\s*=>\s*\{/g,
-  /\bfunction\b[^(){};]*\([^()]*\)\s*\{/g,
-].flatMap((pattern) => [...maskedHomeJs.matchAll(pattern)]
-  .map((match) => ({ open: match.index + match[0].length - 1 })))
-  .map(({ open }) => ({ open, close: blockEnd(maskedHomeJs, open) }))
-  .filter(({ close }) => close !== -1);
-
-// The iframe builder is whichever function creates the iframe — `'iframe'` as
-// a call's first argument, whether that call is document.createElement or a
-// local helper — and it is the innermost such function, not the module IIFE
-// that also contains it.
-const iframeBuilt = liveHomeJs.match(/\(\s*(['"`])iframe\1\s*[,)]/i);
-const [iframeBuilder] = iframeBuilt
-  ? functionBodies
-    .filter(({ open, close }) => open < iframeBuilt.index && iframeBuilt.index < close)
-    .sort((left, right) => right.open - left.open)
-  : [];
-
-// The builder's own first `return`. Nested callbacks return at depth > 1, and
-// everything past this index is dead code for the frame being handed back.
-const topLevelReturn = (source, { open, close }) => {
-  let depth = 0;
-  for (let index = open; index <= close; index += 1) {
-    const character = source[index];
-    if (character === '{') depth += 1;
-    else if (character === '}') depth -= 1;
-    else if (depth === 1 && source.startsWith('return', index)
-        && !/[\w$.]/.test(source[index - 1] ?? '') && !/[\w$]/.test(source[index + 'return'.length] ?? '')) {
-      return index;
-    }
-  }
-  return -1;
-};
-
-// End of the statement starting at `from`: its `;`, or the end of the body for
-// a final return without one. Braces are tracked so an object literal or a
-// callback inside the returned expression cannot end it early.
-const statementEnd = (source, from, close) => {
-  let depth = 0;
-  for (let index = from; index < close; index += 1) {
-    const character = source[index];
-    if (character === '{') depth += 1;
-    else if (character === '}') depth -= 1;
-    else if (character === ';' && depth === 0) return index;
-  }
-  return close;
-};
-
-// Every referrerpolicy assignment in a slice of source, with the identifier it
-// targets (undefined when it is set on an expression rather than a named
-// local, e.g. `el('iframe').setAttribute(...)`: still a value worth policing
-// below, just not one this file can tie to the returned frame).
-/** @param {string} source */
-const referrerPolicyAssignments = (source) => [
-  /(?:(?<target>[A-Za-z_$][\w$]*)\s*\.\s*)?setAttribute\(\s*(['"`])referrerpolicy\2\s*,\s*(['"`])(?<value>[^'"`]*)\3\s*\)/gi,
-  /(?:(?<target>[A-Za-z_$][\w$]*)\s*)?\.\s*referrerPolicy\s*=\s*(['"`])(?<value>[^'"`]*)\2/g,
-].flatMap((pattern) => [...source.matchAll(pattern)]
-  // Both patterns define a `value` group, so a match always has one; `target`
-  // is optional in both, and absent when the call has no named receiver.
-  .map((match) => /** @type {{ target?: string, value: string }} */ (match.groups))
-  .map(({ target, value }) => ({ target, value: value.trim().toLowerCase() })));
-
-// Equal-or-tighter than the _headers policy and still referer enough for
-// YouTube. Anything else is a defect: unsafe-url, no-referrer-when-downgrade,
-// origin-when-cross-origin and origin leak more, while no-referrer and
-// same-origin send nothing cross-origin — Error 153 again.
-const allowedReferrerPolicies = ['strict-origin-when-cross-origin', 'strict-origin'];
-
-// Gate on the embed hosts above, not on URL path shapes: rewriting a path must
-// not silently switch this invariant off.
-const embedOrigins = embedHosts.filter(([directive]) => directive === 'frame-src').map(([, origin]) => origin);
-if (embedOrigins.some((origin) => liveHomeJs.includes(origin))) {
-  const explain = 'YouTube talk embeds break with Error 153 when the document Referrer-Policy suppresses the referer';
-  const returnAt = iframeBuilder ? topLevelReturn(maskedHomeJs, iframeBuilder) : -1;
-  if (!iframeBuilt) {
-    bad(`home.js embeds cross-origin talk URLs but nothing in it builds an iframe (no call takes 'iframe' as its first argument), so the referrerpolicy invariant has no frame to check — ${explain}`);
-  } else if (!iframeBuilder) {
-    bad(`home.js builds its embed iframe outside any function this check can delimit, so there is no returned frame to tie setAttribute('referrerpolicy', ...) to — keep the iframe inside a builder function that returns it; ${explain}`);
-  } else if (returnAt === -1) {
-    bad(`home.js's iframe builder never returns the frame it builds, so the referrerpolicy invariant cannot tell which element reaches the page — ${explain}`);
-  } else {
-    const afterReturn = returnAt + 'return'.length;
-    const returned = new Set(maskedHomeJs
-      .slice(afterReturn, statementEnd(maskedHomeJs, afterReturn, iframeBuilder.close))
-      .match(/[A-Za-z_$][\w$]*/g) ?? []);
-    const reachable = liveHomeJs.slice(iframeBuilder.open, returnAt);
-    const protects = referrerPolicyAssignments(reachable).some(({ target, value }) =>
-      target !== undefined && returned.has(target) && allowedReferrerPolicies.includes(value));
-    if (!protects) {
-      bad(`home.js builds cross-origin embed iframes without a live setAttribute('referrerpolicy', 'strict-origin-when-cross-origin') on the frame its iframe builder returns — the call must be reachable code ahead of that return and target the frame being returned, so a commented-out call (B3), a decoy element elsewhere (B4) and a call after the return (B5) all fail here — ${explain}`);
-    }
-  }
-}
-// Whole-file, deliberately wider than the anchored check above: a weak value
-// anywhere in home.js is a defect whether or not it lands on the returned
-// frame, and one message per distinct value keeps the report readable.
-const declaredReferrerPolicies = referrerPolicyAssignments(liveHomeJs).map(({ value }) => value);
-for (const policy of new Set(declaredReferrerPolicies.filter((value) => !allowedReferrerPolicies.includes(value)))) {
-  bad(`home.js sets referrerpolicy '${policy}' on an embed iframe — only ${allowedReferrerPolicies.join(' or ')} may be used (weaker values leak more than the origin; no-referrer/same-origin bring back Error 153)`);
-}
+// That invariant is NOT asserted here any more. Three rounds of hardening
+// (B3, then B4/B5, then B7-B12 and S23-S26) tried to read it out of home.js's
+// source text and were defeated eleven times — a decoy element, a call after
+// `return`, an early conditional return, a reassigned local, a later
+// removeAttribute, a ternary handing back the other frame, an unused
+// textually-earlier builder, a call in a callback that never runs — because
+// each defeat is a data-flow or reachability question no text scan can answer,
+// and twice the scan red-lighted correct code (B12, S28). It now lives in
+// .github/embed-referrerpolicy.test.mjs, which mounts index.html in a DOM,
+// drives the accordion so the lazily-built embeds exist, and asserts the
+// policy on the iframes that are actually there. Do not re-add a scan here.
 
 // --- HTML <-> JS contract: ids home.js looks up must exist in index.html.
 for (const [, id] of homeJs.matchAll(/getElementById\('([^']+)'\)/g)) {
@@ -1030,4 +903,4 @@ if (errors.length > 0) {
   for (const message of errors) console.error(`  - ${message}`);
   process.exit(1);
 }
-console.log('✓ site invariants hold (CSP parity + coverage, embed referer, id contract, file references, JSON-LD, auth.md discovery, markdown twin, API catalog, ARD manifest, _headers overlap, / stays uncacheable, _redirects syntax)');
+console.log('✓ site invariants hold (CSP parity + coverage, id contract, file references, JSON-LD, auth.md discovery, markdown twin, API catalog, ARD manifest, _headers overlap, / stays uncacheable, _redirects syntax)');
