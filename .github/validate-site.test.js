@@ -1,20 +1,19 @@
 #!/usr/bin/env node
-// Regression tests for the embed-referrerpolicy invariant in
-// `.github/validate-site.js` (fixed for B3/S1/S2 in 85cb0ab) and for the
-// per-provider `allow` list in `static/js/home.js` (T5/S6, commit a64a111).
+// Regression tests for the cross-file invariants in
+// `.github/validate-site.js`: the per-provider `allow` list in
+// `static/js/home.js` (T5/S6, commit a64a111), CSP coverage, file references,
+// JSON-LD, the markdown twin, the API catalog, the ARD manifest, the Q14 OAuth
+// pins, `_headers` overlap and `_redirects` syntax.
 //
 // Each mutation test copies the real site files into a scratch directory,
-// applies one targeted mutation to a copy of home.js, and asserts the
-// validator's exit code (and, where relevant, its stderr message) match what
-// the invariant is supposed to catch. Nothing under the real repo tree is
-// ever modified.
+// applies one targeted mutation to a copy, and asserts the validator's exit
+// code (and, where relevant, its stderr message) match what the invariant is
+// supposed to catch. Nothing under the real repo tree is ever modified.
 //
-// Known gaps this suite documents rather than "fixes closed" (not one-line
-// fixes; filed to .team/BUGS.md instead of touched here):
-//   - B4: setAttribute('referrerpolicy', <strict value>) on an element other
-//     than the embed iframe still satisfies the invariant.
-//   - B5: the same call placed after `return frame;` (unreachable) still
-//     satisfies the invariant.
+// The embed-referrerpolicy cases that used to lead this file are gone with the
+// text scan they covered (B3-B5, B7-B12, S23-S28). That invariant is now a
+// behavioral one: `.github/embed-referrerpolicy.test.mjs` mounts the page in a
+// DOM and reads the iframes it really built.
 //
 // Usage: node .github/validate-site.test.js
 'use strict';
@@ -31,10 +30,6 @@ const validator = path.join(__dirname, 'validate-site.js');
 // what these tests probe — sees every asset it expects.
 const skipTopLevel = new Set(['.git', '.github', '.idea', '.wrangler', 'node_modules']);
 const originalHomeJs = fs.readFileSync(path.join(repoRoot, 'static/js/home.js'), 'utf8');
-
-const REFERRERPOLICY_LINE = "    frame.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');";
-assert.ok(originalHomeJs.includes(REFERRERPOLICY_LINE),
-  'fixture assumption broken: home.js no longer contains the expected referrerpolicy line verbatim');
 
 const originalHeaders = fs.readFileSync(path.join(repoRoot, '_headers'), 'utf8');
 const originalIndexHtml = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
@@ -160,49 +155,6 @@ const test = (name, mutate, expectCode, expectStderrIncludes) => {
 
 // --- Control: unmodified home.js must pass.
 test('unmodified home.js passes', (src) => src, 0);
-
-// --- B3 (fixed 85cb0ab): a //-commented call is inert and must fail closed.
-test('// -commented referrerpolicy call fails closed', (src) =>
-  src.replace(REFERRERPOLICY_LINE, `    // ${REFERRERPOLICY_LINE.trim()}`),
-  1, 'without a live setAttribute');
-
-// --- B3 (fixed 85cb0ab): a /* */ block-commented call must fail closed.
-test('/* */ -commented referrerpolicy call fails closed', (src) =>
-  src.replace(REFERRERPOLICY_LINE, `    /* ${REFERRERPOLICY_LINE.trim()} */`),
-  1, 'without a live setAttribute');
-
-// --- B3 (fixed 85cb0ab): a live weak value beside the strict literal
-// surviving only in a comment must fail closed on the weak value.
-test('live unsafe-url beside a commented-out strict literal fails closed', (src) =>
-  src.replace(REFERRERPOLICY_LINE,
-    `    // was: ${REFERRERPOLICY_LINE.trim()}\n    frame.setAttribute('referrerpolicy', 'unsafe-url');`),
-  1, "sets referrerpolicy 'unsafe-url'");
-
-// --- S1 (fixed 85cb0ab): the `.referrerPolicy =` property form with a weak
-// value must fail closed.
-test('.referrerPolicy = "no-referrer-when-downgrade" fails closed', (src) =>
-  src.replace(REFERRERPOLICY_LINE, "    frame.referrerPolicy = 'no-referrer-when-downgrade';"),
-  1, "sets referrerpolicy 'no-referrer-when-downgrade'");
-
-// --- The `.referrerPolicy =` property form with the strict value must pass.
-test('.referrerPolicy = "strict-origin-when-cross-origin" passes', (src) =>
-  src.replace(REFERRERPOLICY_LINE, "    frame.referrerPolicy = 'strict-origin-when-cross-origin';"),
-  0);
-
-// --- S2 (fixed 85cb0ab): rewriting the embed URL paths (while keeping the
-// hosts) plus deleting the attribute must still fail closed.
-test('rewritten embed paths with the attribute deleted still fail closed', (src) => {
-  let out = src.replace(`${REFERRERPOLICY_LINE}\n`, '');
-  out = out.replace('youtube-nocookie.com/embed/', 'youtube-nocookie.com/watch/');
-  out = out.replace(/speakerdeck\.com\/player\//g, 'speakerdeck.com/show/');
-  return out;
-}, 1, 'without a live setAttribute');
-
-// --- Benign variant: double quotes + extra whitespace must still pass.
-test('double-quoted / extra-whitespace call passes', (src) =>
-  src.replace(REFERRERPOLICY_LINE,
-    '    frame.setAttribute(  "referrerpolicy" ,   "strict-origin-when-cross-origin"  ) ;'),
-  0);
 
 // --- T5/S6: exact per-provider allow list at each embed() call site.
 test('T5: Speaker Deck allow is fullscreen-only, YouTube unchanged', (src) => {

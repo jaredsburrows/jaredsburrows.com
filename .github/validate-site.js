@@ -9,7 +9,9 @@
 // - home.js targeting an id index.html no longer has (emptied the live
 //   Presentations section in July 2026)
 // - an embed iframe built without an explicit referrerpolicy, which broke
-//   both YouTube talks with Error 153 in September 2026
+//   both YouTube talks with Error 153 in September 2026 — that one is now
+//   asserted against a mounted DOM in .github/embed-referrerpolicy.test.mjs
+//   instead of here; see the note where it used to live
 // - a page or _headers preload referencing a local file that doesn't exist,
 //   including the same-origin ABSOLUTE references (og:image, twitter:image,
 //   the JSON-LD image) a rename leaves dangling: image TTLs are 30 days and a
@@ -198,39 +200,21 @@ for (const [directive, origin, why] of edgeInjectedOrigins) {
 }
 
 // --- Embed referer: the talk iframes are cross-origin, and YouTube's player
-// refuses to configure without a referer. The document Referrer-Policy is not
-// enough — an unfixed Cloudflare zone rule overrides it (see .team/SECURITY.md)
-// — so home.js must set the attribute on the frames it builds, in live code:
-// comments are stripped first, so a commented-out call cannot satisfy this.
-// String literals are matched before comment openers so URLs keep their //.
-/** @param {string} source @returns {string} The same source, comments blanked. */
-const stripComments = (source) => source.replace(
-  /`(?:\\[\s\S]|[^\\`])*`|'(?:\\.|[^\\'\n])*'|"(?:\\.|[^\\"\n])*"|\/\*[\s\S]*?\*\/|\/\/.*/g,
-  (/** @type {string} */ match) => (match.startsWith('/') ? ' ' : match));
-const liveHomeJs = stripComments(homeJs);
-
-// Equal-or-tighter than the _headers policy and still referer enough for
-// YouTube. Anything else is a defect: unsafe-url, no-referrer-when-downgrade,
-// origin-when-cross-origin and origin leak more, while no-referrer and
-// same-origin send nothing cross-origin — Error 153 again.
-const allowedReferrerPolicies = ['strict-origin-when-cross-origin', 'strict-origin'];
-const referrerPolicies = [
-  /setAttribute\(\s*(['"`])referrerpolicy\1\s*,\s*(['"`])(?<value>[^'"`]*)\2\s*\)/gi,
-  /\.referrerPolicy\s*=\s*(['"`])(?<value>[^'"`]*)\1/g,
-].flatMap((pattern) => [...liveHomeJs.matchAll(pattern)]
-  // Both patterns above define a `value` group, so a match always has one.
-  .map((match) => /** @type {{ value: string }} */ (match.groups).value.trim().toLowerCase()));
-
-// Gate on the embed hosts above, not on URL path shapes: rewriting a path must
-// not silently switch this invariant off.
-const embedOrigins = embedHosts.filter(([directive]) => directive === 'frame-src').map(([, origin]) => origin);
-if (embedOrigins.some((origin) => liveHomeJs.includes(origin))
-    && !referrerPolicies.some((value) => allowedReferrerPolicies.includes(value))) {
-  bad(`home.js builds cross-origin embed iframes without a live setAttribute('referrerpolicy', 'strict-origin-when-cross-origin') — YouTube talk embeds break with Error 153 when the document Referrer-Policy suppresses the referer`);
-}
-for (const policy of new Set(referrerPolicies.filter((value) => !allowedReferrerPolicies.includes(value)))) {
-  bad(`home.js sets referrerpolicy '${policy}' on an embed iframe — only ${allowedReferrerPolicies.join(' or ')} may be used (weaker values leak more than the origin; no-referrer/same-origin bring back Error 153)`);
-}
+// refuses to configure without a referer. A document Referrer-Policy of
+// same-origin sends none cross-origin — a Cloudflare zone rule applied exactly
+// that for a month (B1/B2) — so home.js pins referrerpolicy on the frames it
+// builds and they keep their referer whatever the document policy later says.
+// That invariant is NOT asserted here any more. Three rounds of hardening
+// (B3, then B4/B5, then B7-B12 and S23-S26) tried to read it out of home.js's
+// source text and were defeated eleven times — a decoy element, a call after
+// `return`, an early conditional return, a reassigned local, a later
+// removeAttribute, a ternary handing back the other frame, an unused
+// textually-earlier builder, a call in a callback that never runs — because
+// each defeat is a data-flow or reachability question no text scan can answer,
+// and twice the scan red-lighted correct code (B12, S28). It now lives in
+// .github/embed-referrerpolicy.test.mjs, which mounts index.html in a DOM,
+// drives the accordion so the lazily-built embeds exist, and asserts the
+// policy on the iframes that are actually there. Do not re-add a scan here.
 
 // --- HTML <-> JS contract: ids home.js looks up must exist in index.html.
 for (const [, id] of homeJs.matchAll(/getElementById\('([^']+)'\)/g)) {
@@ -919,4 +903,4 @@ if (errors.length > 0) {
   for (const message of errors) console.error(`  - ${message}`);
   process.exit(1);
 }
-console.log('✓ site invariants hold (CSP parity + coverage, embed referer, id contract, file references, JSON-LD, auth.md discovery, markdown twin, API catalog, ARD manifest, _headers overlap, / stays uncacheable, _redirects syntax)');
+console.log('✓ site invariants hold (CSP parity + coverage, id contract, file references, JSON-LD, auth.md discovery, markdown twin, API catalog, ARD manifest, _headers overlap, / stays uncacheable, _redirects syntax)');

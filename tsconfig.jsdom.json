@@ -1,0 +1,40 @@
+// Type checking for the CI tests that mount the site in a DOM.
+//
+// A third program, for the same reason that split the first two. This is the
+// only code in the repo that legitimately needs Node's globals and the DOM at
+// once: it is a `node:test` script (fs, path, node:assert) that drives a jsdom
+// document. @types/jsdom declares that need with `/// <reference lib="dom" />`,
+// so folding it into tsconfig.json would hand `document`, `window` and
+// `HTMLElement` to src/worker.mts and the three validators -- none of which
+// have them at runtime. Keeping the DOM fenced into this config preserves the
+// property tsconfig.json's comment describes, rather than quietly dropping it
+// to make one new file compile.
+//
+// Browser code is still not checked here: it is `.js` under static/, this
+// config only reads `.mjs` under .github/, and the two sets do not overlap.
+{
+  "compilerOptions": {
+    "noEmit": true,
+
+    "allowJs": true,
+    "checkJs": true,
+    "strict": true,
+
+    // Matches tsconfig.json: .mjs is ESM, the way Node reads it.
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+
+    "target": "es2023",
+    "lib": ["es2023", "dom", "dom.iterable"],
+
+    // Node's globals, plus jsdom's own declarations, which arrive through the
+    // `import` rather than from here.
+    "types": ["node"],
+
+    "skipLibCheck": true
+  },
+  // types/*.d.ts, not just talks.d.ts: browser.d.ts is what puts `TALKS` on
+  // `Window`, and jsdom's `DOMWindow` extends `Window`, so the test reads
+  // `page.window.TALKS` as `Talk[] | undefined` instead of `any`.
+  "include": [".github/**/*.mjs", "types/*.d.ts"]
+}

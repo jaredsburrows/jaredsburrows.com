@@ -51,10 +51,14 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
-      # Only devDependencies, and only for checking: typescript and @types/node.
+      # Only devDependencies, and only for checking and testing: typescript and
+      # @types/node type check, jsdom mounts the homepage for the embed test.
       # Nothing installed here is bundled, served, or deployed -- see
       # .assetsignore, which keeps this directory and the manifests out of the
-      # asset upload entirely.
+      # asset upload entirely. jsdom is a lockfile dependency rather than
+      # another `--no-save` line because a second `--no-save` install prunes
+      # whatever the first one added (verified: vnu-jar disappears), and the
+      # lockfile is also what puts it in front of Renovate and OSV.
       - name: Install dependencies
         run: npm ci
 
@@ -70,11 +74,12 @@ jobs:
       - name: Validate HTML
         run: git ls-files '*.html' | xargs java -jar node_modules/vnu-jar/build/dist/vnu.jar
 
-      # Type checking, not compiling: both configs are noEmit and every file
-      # stays the .js/.mjs the browser and Node already run. Two configs because
-      # the browser scripts and the Node scripts have different globals -- see
-      # the comments in each. Types live in JSDoc, so the cost lands as comments
-      # in static/js/home.js, which ships unminified: +453 bytes gzipped. The
+      # Type checking, not compiling: every config is noEmit and every file
+      # stays the .js/.mjs the browser and Node already run. Three configs
+      # because each has a different set of globals -- browser scripts, Node
+      # scripts, and the jsdom test that needs both -- see the comments in
+      # each. Types live in JSDoc, so the cost lands as comments in
+      # static/js/home.js, which ships unminified: +453 bytes gzipped. The
       # Node-side files are never served and cost nothing.
       - name: Type check
         run: npm run typecheck
@@ -90,6 +95,14 @@ jobs:
 
       - name: Test site invariant validator
         run: node .github/validate-site.test.js
+
+      # The talk embeds are cross-origin iframes built lazily in JS, and a
+      # referrerpolicy they do not carry costs every visitor the videos
+      # (Error 153). Eleven source-text checks were defeated by data flow the
+      # regex could not follow, so this one mounts the page, opens the
+      # accordion and reads the iframes that are really there.
+      - name: Test the talk embeds
+        run: node --test .github/embed-referrerpolicy.test.mjs
 
       # The Worker decides whether / is HTML or Markdown, and getting that wrong
       # in the browser direction would serve a page with no HTML in it to every
