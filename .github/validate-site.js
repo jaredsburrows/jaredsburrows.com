@@ -26,13 +26,15 @@
 //   Vary, so a stored copy would be served to every client whatever it asked
 //   for (this one has not shipped — it is the one _headers edit that would
 //   hand the markdown homepage to browsers, and nothing else would go red)
-// The API catalog and JSON-LD checks are the exception: nothing has broken
-// yet, because both are new. The catalog exists because RFC 9727 makes
-// machine-read promises about other files, and a broken one is invisible from
+// The API catalog, JSON-LD and llms.txt checks are the exception: nothing has
+// broken yet, because all three are new. The catalog exists because RFC 9727
+// makes machine-read promises about other files, and a broken one is invisible from
 // a browser — no page renders it, so only an agent hitting a 404 would ever
 // find out. JSON-LD fails the same way: no browser renders it, so one trailing
 // comma makes search engines drop the whole block off a page that still looks
-// perfect.
+// perfect. /llms.txt is the purest case of the three: it holds no content of
+// its own, only links to the rest of this tree, so a rename anywhere leaves it
+// pointing at a 404 that nothing else in the build can see.
 // Usage: node .github/validate-site.js [site root]
 'use strict';
 
@@ -640,6 +642,35 @@ if (!fs.existsSync(authMdPath)) {
   }
 }
 
+// index.html's <meta name="description"> is the site's one summary sentence,
+// and TWO markdown documents quote it back under their H1: index.md below and
+// llms.txt further down. Extracted once here so the two comparisons cannot
+// disagree about what they are comparing against.
+const descriptionMatch = indexHtml.match(/<meta\s+name="description"\s+content="([^"]*)"/i);
+
+/**
+ * The blockquote directly under a markdown document's H1, one array entry per
+ * line, normalized the way Markdown itself renders it: the `> ` marker comes
+ * off each line, and joining with a space is what a single newline inside a
+ * quote renders as. Empty when the document has no blockquote there.
+ * @param {string} markdown
+ * @returns {string[]}
+ */
+const summaryBlockquote = (markdown) => {
+  const lines = markdown.split('\n');
+  const summary = [];
+  for (let i = 1; i < lines.length; i += 1) {
+    const line = lines[i].trim();
+    if (line === '') {
+      if (summary.length > 0) break;
+      continue;
+    }
+    if (!line.startsWith('>')) break;
+    summary.push(line.replace(/^>[ \t]?/, ''));
+  }
+  return summary;
+};
+
 // --- /index.md, the markdown twin of the homepage. src/worker.mts serves it
 // from / when the request names `text/markdown` in `Accept`, so for an agent
 // asking for markdown this file IS the homepage — and no browser ever renders
@@ -672,27 +703,14 @@ if (!fs.existsSync(twinPath)) {
   // precisely so the prose beneath it can carry only what the summary does not
   // already say — the two used to restate each other (BUGS.md B3). Two
   // hand-written copies of one sentence drift silently — nothing renders both —
-  // so they are compared here. The normalisation is Markdown's own: the `> `
-  // marker comes off each line and a single newline inside the quote renders as
-  // a space, so what is compared is the rendered text, byte for byte. Both sides
+  // so what `summaryBlockquote` renders is compared byte for byte. Both sides
   // stay plain text: an HTML entity on one side and its character on the other
   // fails this check, and the fix is to keep both plain rather than to teach it
   // to decode.
-  const descriptionMatch = indexHtml.match(/<meta\s+name="description"\s+content="([^"]*)"/i);
   if (!descriptionMatch) {
     bad('index.html: <meta name="description"> not found, so the markdown twin has nothing to match its summary blockquote against');
   } else if (/^#[ \t]+\S/.test(twin)) {
-    const lines = twin.split('\n');
-    const summary = [];
-    for (let i = 1; i < lines.length; i += 1) {
-      const line = lines[i].trim();
-      if (line === '') {
-        if (summary.length > 0) break;
-        continue;
-      }
-      if (!line.startsWith('>')) break;
-      summary.push(line.replace(/^>[ \t]?/, ''));
-    }
+    const summary = summaryBlockquote(twin);
     if (summary.length === 0) {
       bad(`${MARKDOWN_TWIN} has no summary blockquote under its H1 — the first thing after the title must be index.html's meta description, quoted`);
     } else if (summary.join(' ') !== descriptionMatch[1]) {
@@ -773,6 +791,49 @@ if (!homepageRule) {
     .flatMap((line) => line.slice(line.indexOf(':') + 1).split(',').map((value) => value.trim().toLowerCase()));
   if (!varyValues.includes('accept')) {
     bad('_headers "/" rule does not set Vary: Accept — / is content-negotiated between HTML and markdown, so caches must key on Accept');
+  }
+}
+
+// --- /llms.txt, the link index described by llmstxt.org. Where index.md is a
+// copy of the homepage, this file restates no content at all: it is nothing but
+// links to the documents the rest of this tree serves — and that is exactly what
+// makes it rot silently. Nothing renders it, no page links to it, and no other
+// check reaches it, so renaming /auth.md or /api/openapi.json leaves a dangling
+// link here that only an agent following it would ever discover. Checked: the
+// file exists, it opens with the H1 that is the format's one required element
+// (and the whole of what an "llms.txt follows recommendations" audit looks for),
+// its summary blockquote is the same sentence index.md and index.html publish,
+// and every link of its own that lands back on this origin names a real file.
+const LLMS_TXT = 'llms.txt';
+const llmsPath = path.join(root, LLMS_TXT);
+if (!fs.existsSync(llmsPath)) {
+  bad(`${LLMS_TXT} is missing — /llms.txt is the index an agent fetches to find every other document on this origin`);
+} else {
+  // Fenced blocks come off first, as in auth.md above: a heading or a link
+  // inside a shell example is documentation of a URL, not a reference to one.
+  const llms = fs.readFileSync(llmsPath, 'utf8').replace(/^```[\s\S]*?^```/gm, '');
+  // Anchored at the start of the file for the same reason as the twin: the H1
+  // is the title, and front matter ahead of it is a generator creeping in.
+  if (!/^#[ \t]+\S/.test(llms)) {
+    bad(`${LLMS_TXT} does not start with an ATX H1 ("# Jared Burrows") — the H1 is the one element llms.txt requires, and an agent has no name for this site without it`);
+  } else if (descriptionMatch) {
+    const summary = summaryBlockquote(llms);
+    if (summary.length === 0) {
+      bad(`${LLMS_TXT} has no summary blockquote under its H1 — the first thing after the title must be index.html's meta description, quoted`);
+    } else if (summary.join(' ') !== descriptionMatch[1]) {
+      bad(`${LLMS_TXT} summary blockquote is not index.html's meta description verbatim — the same sentence is written twice and one copy has drifted\n      ${LLMS_TXT}:   ${summary.join(' ')}\n      index.html: ${descriptionMatch[1]}`);
+    }
+  }
+
+  // Every link that lands on this origin, including the ones written inside a
+  // bullet's notes — an agent follows those like any other. Absolute URLs go
+  // through sameOriginPath, as everywhere else in this file, so a rewritten
+  // host cannot smuggle a reference past the check; a root-relative target is
+  // same-origin by construction and needs no parsing. Off-origin links (the
+  // blog, GitHub, LinkedIn) are not this tree's to keep honest.
+  for (const [, target] of llms.matchAll(/\[[^\]]*\]\(([^)\s]+)\)/g)) {
+    const reference = sameOriginPath(target) ?? (/^\/(?!\/)/.test(target) ? target : undefined);
+    if (reference !== undefined) checkLocal(LLMS_TXT, reference);
   }
 }
 
@@ -903,4 +964,4 @@ if (errors.length > 0) {
   for (const message of errors) console.error(`  - ${message}`);
   process.exit(1);
 }
-console.log('✓ site invariants hold (CSP parity + coverage, id contract, file references, JSON-LD, auth.md discovery, markdown twin, API catalog, ARD manifest, _headers overlap, / stays uncacheable, _redirects syntax)');
+console.log('✓ site invariants hold (CSP parity + coverage, id contract, file references, JSON-LD, auth.md discovery, markdown twin, llms.txt index, API catalog, ARD manifest, _headers overlap, / stays uncacheable, _redirects syntax)');

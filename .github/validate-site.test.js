@@ -62,7 +62,15 @@ assert.strictEqual(
 assert.ok(SUMMARY_BLOCKQUOTE.every((line) => line.startsWith('> ')),
   'fixture assumption broken: index.md summary is no longer a blockquote');
 
-// Rewrite the description in both places at once, for tests that are about
+// llms.txt quotes the same sentence under its own H1, wrapped identically, so
+// the two markdown documents share one fixture. Asserted rather than assumed:
+// re-wrapping one of them would otherwise make `withDescription` silently miss
+// a file and every test using it fail on the drift guard instead.
+const originalLlmsTxt = fs.readFileSync(path.join(repoRoot, 'llms.txt'), 'utf8');
+assert.deepStrictEqual(blockAfterH1(originalLlmsTxt), SUMMARY_BLOCKQUOTE,
+  'fixture assumption broken: llms.txt no longer quotes the meta description exactly as index.md wraps it');
+
+// Rewrite the description in every place at once, for tests that are about
 // something else and only need it to hold still. Tests that are about the drift
 // guard itself deliberately edit one side and must not use this. Replacements
 // are functions so a `$` in the text stays literal.
@@ -70,6 +78,7 @@ assert.ok(SUMMARY_BLOCKQUOTE.every((line) => line.startsWith('> ')),
 const withDescription = (text) => ({
   'index.html': originalIndexHtml.replace(/(name="description" content=)"[^"]+"/, (_, lead) => `${lead}"${text}"`),
   'index.md': originalIndexMd.replace(SUMMARY_BLOCKQUOTE.join('\n'), () => `> ${text}`),
+  'llms.txt': originalLlmsTxt.replace(SUMMARY_BLOCKQUOTE.join('\n'), () => `> ${text}`),
 });
 
 // The measurement endpoints the CSP must list. `_headers` is production and
@@ -1006,6 +1015,64 @@ testFiles('dropping one of the two same-titled talk headings fails closed',
 testFiles('a talk title kept only in prose outside the Talks section fails closed',
   { 'index.md': `${originalIndexMd.replace('### Make Your Build Great Again\n\n', '')}\nSee also Make Your Build Great Again.\n` },
   1, 'does not list the talk "Make Your Build Great Again"');
+
+// --- /llms.txt, the link index (llmstxt.org). It is pure references: nothing
+// renders it, no page links to it, and every other check in the validator stops
+// at the files it restates, so a link that rots here is invisible until an agent
+// follows it. The H1 case is also the whole of what an external "llms.txt
+// follows recommendations" audit inspects.
+assert.ok(/^# /.test(originalLlmsTxt),
+  'fixture assumption broken: llms.txt no longer starts with an ATX H1');
+
+testFiles('a missing llms.txt fails closed', { 'llms.txt': null }, 1, 'llms.txt is missing');
+
+// Front matter ahead of the title is the generator creeping in, and it costs
+// the file the one element the format requires.
+testFiles('llms.txt with front matter ahead of the H1 fails closed',
+  { 'llms.txt': `---\ntitle: Jared Burrows\n---\n\n${originalLlmsTxt}` },
+  1, 'does not start with an ATX H1');
+
+testFiles('llms.txt whose title is an H2 fails closed',
+  { 'llms.txt': originalLlmsTxt.replace(/^#[ \t]+/, '## ') },
+  1, 'does not start with an ATX H1');
+
+// The summary is written three times now — index.html, index.md, llms.txt — so
+// the drift guard covers the third copy on its own. Only llms.txt is edited
+// here; rewriting both sides is what `withDescription` is for.
+testFiles('llms.txt losing its summary blockquote fails closed',
+  { 'llms.txt': originalLlmsTxt.replace(`${SUMMARY_BLOCKQUOTE.join('\n')}\n\n`, '') },
+  1, 'has no summary blockquote under its H1');
+
+testFiles('llms.txt summary drifting from the meta description fails closed',
+  { 'llms.txt': originalLlmsTxt.replace(SUMMARY_BLOCKQUOTE.join('\n'),
+    () => '> Android engineer. Speaker. Maintainer.') },
+  1, 'is not index.html\'s meta description verbatim');
+
+// The reference check, which is the reason this file is validated at all: the
+// index names /api/openapi.json, /auth.md and the ARD manifest by absolute URL,
+// and a rename anywhere in the tree leaves a link here pointing at a 404.
+testFiles('an absolute llms.txt link to a file that does not exist fails closed',
+  { 'llms.txt': originalLlmsTxt.replace('/api/openapi.json', '/api/openapi-v2.json') },
+  1, 'references missing file');
+
+// Root-relative is same-origin by construction, so it is checked without going
+// through the host parse — a link written the way index.md writes its links
+// must not slip past because it carries no authority.
+testFiles('a root-relative llms.txt link to a file that does not exist fails closed',
+  { 'llms.txt': `${originalLlmsTxt}\n- [Ghost](/api/ghost.json): not a file this site serves.\n` },
+  1, 'references missing file');
+
+// The other half of the same rule: off-origin links are nobody's to resolve
+// here. blog.jaredsburrows.com is a real host this tree does not serve, and the
+// bare-eye similarity is exactly why the check parses the host (S18).
+testFiles('an off-origin llms.txt link to a path this tree has no file for passes',
+  { 'llms.txt': `${originalLlmsTxt}\n- [Elsewhere](https://blog.jaredsburrows.com/nothing-here): another host.\n` }, 0);
+
+// A URL inside a fenced block is documentation of a URL, not a reference to
+// one — the same rule auth.md's heading check follows.
+testFiles('an llms.txt link inside a fenced block is not a reference', {
+  'llms.txt': `${originalLlmsTxt}\n\`\`\`\n- [Example](/api/example.json): how an entry looks.\n\`\`\`\n`,
+}, 0);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

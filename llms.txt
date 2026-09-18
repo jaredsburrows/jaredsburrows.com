@@ -1,0 +1,49 @@
+# Jared Burrows
+
+> Software engineer with 10+ years building mobile, cross-platform, and cloud
+> products for Adobe, Google, Microsoft, Nike, NBCUniversal, Yahoo, and Northrop
+> Grumman. I specialize in Android and Kotlin development, shipping award-winning
+> apps used by millions. Open-source maintainer and conference speaker, including
+> Droidcon.
+
+A personal site: one page of bio and conference talks, plus a machine-readable
+twin of each. Everything below is an anonymous GET — this origin has no
+authentication, no user data and no write surface.
+
+## Site
+
+- [Homepage in Markdown](https://jaredsburrows.com/index.md): the whole page as
+  markdown — the summary above, where else I publish, and every talk with its
+  slides and video. The site root serves these same bytes to a request whose
+  `Accept` names `text/markdown`.
+- [Talks dataset](https://jaredsburrows.com/api/talks.json): the talks as JSON,
+  newest first, each with its date, title, venue, location, event link, abstract
+  and — where they exist — Speaker Deck and YouTube ids.
+- [Talks API](https://jaredsburrows.com/api/openapi.json): OpenAPI 3.1
+  description of the two read-only endpoints over that dataset, advertised in the
+  RFC 9727 catalog at
+  [/.well-known/api-catalog](https://jaredsburrows.com/.well-known/api-catalog).
+- [Agent manifest](https://jaredsburrows.com/.well-known/ard.json): everything
+  this origin offers an agent, in one file. Served byte-identically at
+  [/.well-known/ai-catalog.json](https://jaredsburrows.com/.well-known/ai-catalog.json).
+
+## Policies
+
+- [Authentication](https://jaredsburrows.com/auth.md): none, ever. No issuer, no
+  protected resources, and no registration route worth probing for.
+- [Crawl and training permissions](https://jaredsburrows.com/robots.txt):
+  `ai-train=yes, search=yes, ai-input=yes` for every user agent, with nothing
+  disallowed.
+- [Security contact](https://jaredsburrows.com/.well-known/security.txt): where
+  to report a vulnerability.
+
+## Optional
+
+- [Blog](https://blog.jaredsburrows.com): longer posts, usually about Android or
+  Gradle.
+- [Mobile apps](https://burrowsapps.com): Android apps I've published under
+  BurrowsApps.
+- [GitHub](https://github.com/jaredsburrows): gradle-license-plugin, plus repos
+  I should archive.
+- [LinkedIn](https://linkedin.com/in/jaredsburrows): the resume version of all
+  this.
