@@ -70,12 +70,12 @@ jobs:
       - name: Validate HTML
         run: git ls-files '*.html' | xargs java -jar node_modules/vnu-jar/build/dist/vnu.jar
 
-      # Type checking, not compiling: both configs are noEmit and every file
-      # stays the .js/.mjs the browser and Node already run. Two configs because
-      # the browser scripts and the Node scripts have different globals -- see
-      # the comments in each. Types live in JSDoc, so the cost lands as comments
-      # in static/js/home.js, which ships unminified: +453 bytes gzipped. The
-      # Node-side files are never served and cost nothing.
+      # Type checking, not compiling: both configs are noEmit, and Node runs the
+      # .ts/.mts files below by stripping types in place -- no build step, no
+      # emitted file. Two configs because the browser scripts and the Node
+      # scripts have different globals; see the comments in each. Only
+      # static/js/ is still JavaScript, and its types live in JSDoc, which ships
+      # as comments because that file is unminified: +453 bytes gzipped.
       - name: Type check
         run: npm run typecheck
 
@@ -83,13 +83,13 @@ jobs:
         run: for f in static/js/*.js; do node --check "$f"; done
 
       - name: Validate talks data
-        run: node .github/validate-talks.js
+        run: node .github/validate-talks.ts
 
       - name: Validate site invariants
-        run: node .github/validate-site.js
+        run: node .github/validate-site.ts
 
       - name: Test site invariant validator
-        run: node .github/validate-site.test.js
+        run: node .github/validate-site.test.ts
 
       # The Worker decides whether / is HTML or Markdown, and getting that wrong
       # in the browser direction would serve a page with no HTML in it to every

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Regression tests for the embed-referrerpolicy invariant in
-// `.github/validate-site.js` (fixed for B3/S1/S2 in 85cb0ab) and for the
+// `.github/validate-site.ts` (fixed for B3/S1/S2 in 85cb0ab) and for the
 // per-provider `allow` list in `static/js/home.js` (T5/S6, commit a64a111).
 //
 // Each mutation test copies the real site files into a scratch directory,
@@ -16,17 +16,24 @@
 //   - B5: the same call placed after `return frame;` (unreachable) still
 //     satisfies the invariant.
 //
-// Usage: node .github/validate-site.test.js
+// Usage: node .github/validate-site.test.ts
 'use strict';
 
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
-const assert = require('assert');
-const { execFileSync } = require('child_process');
+// Node's built-ins are required, not imported: these files are CommonJS and stay
+// that way (package.json pins "type": "commonjs"). The `typeof import(...)`
+// annotations are types, not imports -- they erase completely, so the runtime is
+// the same `require` it has always been. They are needed because TypeScript
+// resolves a bare `require()` to `any` in a .ts file, where it special-cased and
+// typed it in .js: without them `fs.readFileSync` returns `any` and every string
+// derived from a file silently stops being checked.
+const fs: typeof import('fs') = require('fs');
+const os: typeof import('os') = require('os');
+const path: typeof import('path') = require('path');
+const assert: typeof import('assert') = require('assert');
+const { execFileSync }: typeof import('child_process') = require('child_process');
 
 const repoRoot = path.join(__dirname, '..');
-const validator = path.join(__dirname, 'validate-site.js');
+const validator = path.join(__dirname, 'validate-site.ts');
 // Full tree (minus VCS/tooling dirs) so the file-reference check — unrelated to
 // what these tests probe — sees every asset it expects.
 const skipTopLevel = new Set(['.git', '.github', '.idea', '.wrangler', 'node_modules']);
@@ -40,7 +47,7 @@ const originalHeaders = fs.readFileSync(path.join(repoRoot, '_headers'), 'utf8')
 const originalIndexHtml = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
 
 // The homepage description is written twice — index.html's <meta
-// name="description"> and index.md's summary blockquote — and validate-site.js
+// name="description"> and index.md's summary blockquote — and validate-site.ts
 // pins them to each other byte for byte (T5a/B3). So these belong to the whole
 // file, not to one block: any fixture that rewrites one copy must rewrite the
 // other, or it trips the drift guard instead of the invariant it meant to test.
@@ -53,8 +60,7 @@ assert.ok(META_DESCRIPTION, 'fixture assumption broken: index.html has no <meta 
 // summary is soft-wrapped, so a re-wrap or a longer description changes how
 // many lines it occupies, and a slice would then compare the wrong text —
 // a test that passes for the wrong reason rather than one that fails loudly.
-/** @param {string} markdown @returns {string[]} */
-const blockAfterH1 = (markdown) => {
+const blockAfterH1 = (markdown: string): string[] => {
   const lines = markdown.split('\n').slice(1);
   const start = lines.findIndex((line) => line.trim() !== '');
   const end = lines.findIndex((line, index) => index > start && line.trim() === '');
@@ -71,8 +77,7 @@ assert.ok(SUMMARY_BLOCKQUOTE.every((line) => line.startsWith('> ')),
 // something else and only need it to hold still. Tests that are about the drift
 // guard itself deliberately edit one side and must not use this. Replacements
 // are functions so a `$` in the text stays literal.
-/** @param {string} text @returns {Record<string, string>} */
-const withDescription = (text) => ({
+const withDescription = (text: string): Record<string, string> => ({
   'index.html': originalIndexHtml.replace(/(name="description" content=)"[^"]+"/, (_, lead) => `${lead}"${text}"`),
   'index.md': originalIndexMd.replace(SUMMARY_BLOCKQUOTE.join('\n'), () => `> ${text}`),
 });
@@ -105,11 +110,10 @@ let failed = 0;
 // or to `null` to delete it — a missing file is its own failure mode, and
 // writing empty content does not exercise it.
 /**
- * @param {Record<string, string | null>} overrides Repo-relative path to the
- *   content to write over its copy, or null to delete it.
- * @returns {{ code: number, stdout: string, stderr: string }}
+ * @param overrides Repo-relative path to the content to write over its copy,
+ *   or null to delete it.
  */
-const runValidator = (overrides) => {
+const runValidator = (overrides: Record<string, string | null>): { code: number, stdout: string, stderr: string } => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'validate-site-test-'));
   try {
     for (const name of fs.readdirSync(repoRoot)) {
@@ -125,7 +129,7 @@ const runValidator = (overrides) => {
       return { code: 0, stdout, stderr: '' };
     } catch (error) {
       // execFileSync throws an Error carrying the child's exit status and pipes.
-      const failure = /** @type {{ status: number, stdout?: string, stderr?: string }} */ (error);
+      const failure = error as { status: number, stdout?: string, stderr?: string };
       return { code: failure.status, stdout: failure.stdout ?? '', stderr: failure.stderr ?? '' };
     }
   } finally {
@@ -134,12 +138,14 @@ const runValidator = (overrides) => {
 };
 
 /**
- * @param {string} name
- * @param {(src: string) => string} mutate Applied to static/js/home.js.
- * @param {number} expectCode
- * @param {string} [expectStderrIncludes]
+ * @param mutate Applied to static/js/home.js.
  */
-const test = (name, mutate, expectCode, expectStderrIncludes) => {
+const test = (
+  name: string,
+  mutate: (src: string) => string,
+  expectCode: number,
+  expectStderrIncludes?: string,
+) => {
   let result;
   try {
     result = runValidator({ 'static/js/home.js': mutate(originalHomeJs) });
@@ -153,7 +159,7 @@ const test = (name, mutate, expectCode, expectStderrIncludes) => {
     passed += 1;
   } catch (error) {
     console.error(`not ok - ${name}`);
-    console.error(`  ${/** @type {Error} */ (error).message}`);
+    console.error(`  ${(error as Error).message}`);
     failed += 1;
   }
 };
@@ -236,12 +242,14 @@ test('no embed() call site omits the allow argument', (src) => {
 // `expectStderrIncludes` takes one substring or a list of them — a list is how
 // a case proves that a later, unrelated invariant still ran (S20).
 /**
- * @param {string} name
- * @param {Record<string, string | null>} overrides
- * @param {number} expectCode
- * @param {string | string[]} [expectStderrIncludes] One substring or a list.
+ * @param expectStderrIncludes One substring or a list of them.
  */
-const testFiles = (name, overrides, expectCode, expectStderrIncludes) => {
+const testFiles = (
+  name: string,
+  overrides: Record<string, string | null>,
+  expectCode: number,
+  expectStderrIncludes?: string | string[],
+) => {
   let result;
   try {
     result = runValidator(overrides);
@@ -255,17 +263,15 @@ const testFiles = (name, overrides, expectCode, expectStderrIncludes) => {
     passed += 1;
   } catch (error) {
     console.error(`not ok - ${name}`);
-    console.error(`  ${/** @type {Error} */ (error).message}`);
+    console.error(`  ${(error as Error).message}`);
     failed += 1;
   }
 };
 
 // Drop sources from both the _headers policy and its index.html mirror at once,
 // so CSP parity still holds and the coverage check is what fails.
-/** @param {string[]} sources @returns {Record<string, string>} */
-const dropSources = (sources) => {
-  /** @param {string} content */
-  const strip = (content) => sources.reduce((out, source) => out.split(` ${source} `).join(' '), content);
+const dropSources = (sources: string[]): Record<string, string> => {
+  const strip = (content: string) => sources.reduce((out, source) => out.split(` ${source} `).join(' '), content);
   return { '_headers': strip(originalHeaders), 'index.html': strip(originalIndexHtml) };
 };
 
@@ -284,8 +290,7 @@ testFiles('the *.analytics.google.com wildcard does not satisfy the apex require
 // Gate: with no gtag.js/gtm.js load in index.html the requirement drops out
 // instead of freezing a host list into a site that no longer measures.
 testFiles('removing the tag loads drops the measurement requirement', (() => {
-  /** @param {string} content */
-  const neutralize = (content) =>
+  const neutralize = (content: string) =>
     content.replace(/googletagmanager\.com\/(?:gtag\/js|gtm\.js)/g, 'googletagmanager.com/ns.html');
   const dropped = dropSources(MEASUREMENT_SOURCES);
   return { ...dropped, 'index.html': neutralize(dropped['index.html']) };
@@ -334,8 +339,7 @@ testFiles('static.cloudflareinsights.com does not satisfy the apex connect-src r
 // injection is a Cloudflare zone setting with no in-repo signal — so removing
 // the tag loads must NOT drop it the way it drops the measurement list.
 testFiles('the beacon requirement survives removing the gtag/gtm loads', (() => {
-  /** @param {string} content */
-  const neutralize = (content) =>
+  const neutralize = (content: string) =>
     content.replace(/googletagmanager\.com\/(?:gtag\/js|gtm\.js)/g, 'googletagmanager.com/ns.html');
   const dropped = dropSources(EDGE_INJECTED_SOURCES);
   return { ...dropped, 'index.html': neutralize(dropped['index.html']) };
@@ -433,8 +437,7 @@ const JSONLD_BLOCK = /(<script[^>]*type="application\/ld\+json"[^>]*>)([\s\S]*?)
 assert.ok(JSONLD_BLOCK.test(originalIndexHtml),
   'fixture assumption broken: index.html no longer has a JSON-LD block');
 
-/** @param {(body: string) => string} transform @returns {string} */
-const mutateJsonLd = (transform) =>
+const mutateJsonLd = (transform: (body: string) => string): string =>
   originalIndexHtml.replace(JSONLD_BLOCK, (match, open, body, close) => `${open}${transform(body)}${close}`);
 
 // A trailing comma is the classic hand-edit defect: valid-looking, fatal to
@@ -481,10 +484,8 @@ testFiles('a JSON-LD @context array containing schema.org passes', {
 
 // More than one block is the shape this site is heading for (a second block
 // alongside the first), so each has to be parsed and named on its own.
-/** @param {string} json */
-const SECOND_BLOCK = (json) => `<script type="application/ld+json">${json}</script>`;
-/** @param {string} json */
-const withSecondBlock = (json) =>
+const SECOND_BLOCK = (json: string) => `<script type="application/ld+json">${json}</script>`;
+const withSecondBlock = (json: string) =>
   originalIndexHtml.replace(JSONLD_BLOCK, (match) => `${match}\n    ${SECOND_BLOCK(json)}`);
 
 testFiles('a second, valid JSON-LD block passes', {
@@ -581,8 +582,7 @@ testFiles('an entry url pointing at a missing file fails closed', (() => {
 
 // ARD Section 4.3: exactly one of url or data. Both is ambiguous about which
 // is authoritative; neither is an entry that resolves to nothing.
-/** @type {Array<[string, (entry: any) => any, string]>} */
-const ardEntryMutations = [
+const ardEntryMutations: Array<[string, (entry: any) => any, string]> = [
   ['both url and data', (entry) => ({ ...entry, data: { talks: [] } }), 'has both'],
   ['neither url nor data', ({ url, ...entry }) => entry, 'has neither'],
 ];
@@ -624,8 +624,7 @@ assert.ok(fs.existsSync(ESCAPE_TARGET),
 assert.strictEqual(path.join('/deep/scratch/dir', TRAVERSAL.replace(/^\//, '')), ESCAPE_TARGET,
   'fixture assumption broken: the traversal no longer reaches outside the tree the way the unfixed check resolved it');
 
-/** @param {string} url */
-const withManifestUrl = (url) => {
+const withManifestUrl = (url: string) => {
   const manifest = JSON.parse(originalAiCatalog);
   manifest.entries[0].url = url;
   const text = JSON.stringify(manifest, null, 2);
@@ -701,11 +700,9 @@ testFiles('an og:image with a ../ traversal out of the repo fails closed', {
 // protocol-relative og:image is a normal thing to write. Every case below was
 // exit 0 before the fix, with the referenced file genuinely absent.
 const GONE = '/static/image/avatar-gone.jpg';
-/** @param {string} value */
-const withOgImage = (value) =>
+const withOgImage = (value: string) =>
   originalIndexHtml.replace(/(property="og:image" content=)"[^"]+"/, `$1"${value}"`);
-/** @param {string} value */
-const withJsonLdImage = (value) =>
+const withJsonLdImage = (value: string) =>
   mutateJsonLd((body) => body.replace(/("image"\s*:\s*)"[^"]+"/, `$1"${value}"`));
 assert.notStrictEqual(withOgImage('x'), originalIndexHtml,
   'fixture assumption broken: no og:image content attribute to rewrite');
@@ -781,8 +778,7 @@ testFiles('a robots.txt Agentmap of //jaredsburrows.com/.well-known/nope.json fa
 // 'unsafe-inline'. Nothing in the committed blocks is anywhere near this
 // today; the guard is what keeps the class closed as `description` and the
 // other free-prose fields get edited again.
-/** @param {string} field */
-const addJsonLdField = (field) =>
+const addJsonLdField = (field: string) =>
   mutateJsonLd((body) => body.replace(/("@type"\s*:)/, `${field},\n        $1`));
 assert.notStrictEqual(addJsonLdField('"x": 1'), originalIndexHtml,
   'fixture assumption broken: the JSON-LD block has no @type to insert a field before');
@@ -823,8 +819,7 @@ testFiles('a JSON-LD string with a correctly escaped <\\/script passes', {
 // alongside the deep block is what proves they run now: before the fix that
 // second error was never reported at all.
 const NESTED_LEVELS = 20000;
-/** @param {number} levels */
-const nestedBlock = (levels) =>
+const nestedBlock = (levels: number) =>
   `{"@context": "https://schema.org", "@type": "Person", "deep": ${'{"a": '.repeat(levels)}1${'}'.repeat(levels)}}`;
 
 testFiles(`a JSON-LD block nested ${NESTED_LEVELS} levels deep fails by name, and the checks after it still run`, {
@@ -1033,7 +1028,7 @@ testFiles('a summary that is no longer a blockquote fails closed',
 // The reverse drift the forward check could never see: a talk is retired from
 // talks.js and api/talks.json, and the twin keeps publishing it to agents.
 testFiles('a talk deleted from talks.js but left in index.md fails closed', (() => {
-  const remaining = JSON.parse(originalTalksJson).talks.filter((/** @type {Talk} */ talk) => talk.title !== 'Make Your Build Great Again');
+  const remaining = JSON.parse(originalTalksJson).talks.filter((talk: Talk) => talk.title !== 'Make Your Build Great Again');
   assert.strictEqual(remaining.length, JSON.parse(originalTalksJson).talks.length - 1,
     'fixture assumption broken: talks.js no longer publishes "Make Your Build Great Again"');
   return {
