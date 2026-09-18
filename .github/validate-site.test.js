@@ -39,6 +39,42 @@ assert.ok(originalHomeJs.includes(REFERRERPOLICY_LINE),
 const originalHeaders = fs.readFileSync(path.join(repoRoot, '_headers'), 'utf8');
 const originalIndexHtml = fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8');
 
+// The homepage description is written twice — index.html's <meta
+// name="description"> and index.md's summary blockquote — and validate-site.js
+// pins them to each other byte for byte (T5a/B3). So these belong to the whole
+// file, not to one block: any fixture that rewrites one copy must rewrite the
+// other, or it trips the drift guard instead of the invariant it meant to test.
+const originalIndexMd = fs.readFileSync(path.join(repoRoot, 'index.md'), 'utf8');
+const META_DESCRIPTION = (originalIndexHtml.match(/<meta name="description" content="([^"]*)">/) ?? [])[1];
+assert.ok(META_DESCRIPTION, 'fixture assumption broken: index.html has no <meta name="description">');
+// B3: the description is the twin's summary blockquote, not its first
+// paragraph — anything under it carries only what the summary does not say.
+// Read as "the block after the H1", never as a hardcoded line range: the
+// summary is soft-wrapped, so a re-wrap or a longer description changes how
+// many lines it occupies, and a slice would then compare the wrong text —
+// a test that passes for the wrong reason rather than one that fails loudly.
+const blockAfterH1 = (markdown) => {
+  const lines = markdown.split('\n').slice(1);
+  const start = lines.findIndex((line) => line.trim() !== '');
+  const end = lines.findIndex((line, index) => index > start && line.trim() === '');
+  return lines.slice(start, end === -1 ? undefined : end);
+};
+const SUMMARY_BLOCKQUOTE = blockAfterH1(originalIndexMd);
+assert.strictEqual(
+  SUMMARY_BLOCKQUOTE.map((line) => line.trim().replace(/^>[ \t]?/, '')).join(' '), META_DESCRIPTION,
+  'fixture assumption broken: index.md no longer quotes the meta description as its summary blockquote');
+assert.ok(SUMMARY_BLOCKQUOTE.every((line) => line.startsWith('> ')),
+  'fixture assumption broken: index.md summary is no longer a blockquote');
+
+// Rewrite the description in both places at once, for tests that are about
+// something else and only need it to hold still. Tests that are about the drift
+// guard itself deliberately edit one side and must not use this. Replacements
+// are functions so a `$` in the text stays literal.
+const withDescription = (text) => ({
+  'index.html': originalIndexHtml.replace(/(name="description" content=)"[^"]+"/, (_, lead) => `${lead}"${text}"`),
+  'index.md': originalIndexMd.replace(SUMMARY_BLOCKQUOTE.join('\n'), () => `> ${text}`),
+});
+
 // The measurement endpoints the CSP must list. `_headers` is production and
 // index.html mirrors it, so a source has to be dropped from both at once or the
 // parity check fires first and masks the coverage check under test.
@@ -182,15 +218,17 @@ test('no embed() call site omits the allow argument', (src) => {
 // --- Measurement CSP coverage: gtag.js fans /g/collect out to hosts that
 // appear nowhere in the markup, so only an explicit list catches a missing one.
 // Every case below was blocked in production (PageSpeed console, Sept 2026).
+// `expectStderrIncludes` takes one substring or a list of them — a list is how
+// a case proves that a later, unrelated invariant still ran (S20).
 const testFiles = (name, overrides, expectCode, expectStderrIncludes) => {
   let result;
   try {
     result = runValidator(overrides);
     assert.strictEqual(result.code, expectCode,
       `expected exit ${expectCode}, got ${result.code}\nstderr:\n${result.stderr}`);
-    if (expectStderrIncludes) {
-      assert.ok(result.stderr.includes(expectStderrIncludes),
-        `expected stderr to include ${JSON.stringify(expectStderrIncludes)}\nstderr:\n${result.stderr}`);
+    for (const expected of [expectStderrIncludes ?? []].flat()) {
+      assert.ok(result.stderr.includes(expected),
+        `expected stderr to include ${JSON.stringify(expected)}\nstderr:\n${result.stderr}`);
     }
     console.log(`ok - ${name}`);
     passed += 1;
@@ -623,11 +661,150 @@ testFiles('an og:image with a ../ traversal out of the repo fails closed', {
     `$1${TRAVERSAL}"`),
 }, 1, `index.html references missing file ${TRAVERSAL}`);
 
+// --- S18: which references are ours is decided by the parsed HOST, not by a
+// string prefix. `https://jaredsburrows.com/…` is one of several forms every
+// client resolves to this origin, and while the prefix test was right about
+// lookalikes it skipped all the others as "off-origin" — so the S11 rename
+// invariant could be switched back off by REWRITING a reference instead of
+// deleting it, which is the easier mistake of the two to make by accident: a
+// protocol-relative og:image is a normal thing to write. Every case below was
+// exit 0 before the fix, with the referenced file genuinely absent.
+const GONE = '/static/image/avatar-gone.jpg';
+const withOgImage = (value) =>
+  originalIndexHtml.replace(/(property="og:image" content=)"[^"]+"/, `$1"${value}"`);
+const withJsonLdImage = (value) =>
+  mutateJsonLd((body) => body.replace(/("image"\s*:\s*)"[^"]+"/, `$1"${value}"`));
+assert.notStrictEqual(withOgImage('x'), originalIndexHtml,
+  'fixture assumption broken: no og:image content attribute to rewrite');
+assert.notStrictEqual(withJsonLdImage('x'), originalIndexHtml,
+  'fixture assumption broken: the JSON-LD block has no image field to rewrite');
+
+// The third element is how the same origin has to be SPELLED inside a JSON
+// string, which differs only for the backslash form: `\` is an escape
+// character to JSON, so the block has to carry `\\` to mean the one backslash
+// a consumer then resolves.
+for (const [origin, why, jsonOrigin = origin] of [
+  ['//jaredsburrows.com', 'protocol-relative, which every scraper resolves against the page origin'],
+  ['http://jaredsburrows.com', 'the legacy scheme, which redirects here rather than going elsewhere'],
+  ['HTTPS://JaredsBurrows.COM', 'case variants, which no host comparison may be sensitive to'],
+  ['https://jaredsburrows.com:443', 'the default port spelled out, which is the same origin'],
+  ['https:/\\jaredsburrows.com', 'a backslash separator, which the URL parser normalises to /', 'https:/\\\\jaredsburrows.com'],
+]) {
+  testFiles(`an og:image of ${origin}${GONE} fails closed (${why})`,
+    { 'index.html': withOgImage(`${origin}${GONE}`) },
+    1, `index.html references missing file ${GONE}`);
+
+  testFiles(`a JSON-LD image of ${origin}${GONE} fails closed (${why})`,
+    { 'index.html': withJsonLdImage(`${jsonOrigin}${GONE}`) },
+    1, `index.html JSON-LD block 1 references missing file ${GONE}`);
+}
+
+// The other half, and the half a host check is easy to get wrong: none of
+// these is this origin, so none of them names a file in this tree and none may
+// be reported as missing. blog.jaredsburrows.com is in the block's sameAs list
+// today — a real subdomain served by something else entirely.
+for (const offOrigin of [
+  'https://jaredsburrows.com.evil.test',
+  'https://notjaredsburrows.com',
+  '//jaredsburrows.com.evil.test',
+  'https://blog.jaredsburrows.com',
+  'https://example.com',
+]) {
+  testFiles(`an og:image of ${offOrigin}${GONE} is not treated as a local file`,
+    { 'index.html': withOgImage(`${offOrigin}${GONE}`) }, 0);
+
+  testFiles(`a JSON-LD image of ${offOrigin}${GONE} is not treated as a local file`,
+    { 'index.html': withJsonLdImage(`${offOrigin}${GONE}`) }, 0);
+}
+
+// Prose in a content="" attribute must stay prose: parsing every value against
+// the site origin — rather than only the ones carrying an authority — would
+// turn the description, the viewport and the CSP mirror into file references
+// and fail the build on a sentence.
+testFiles('a description that starts with a word and a colon is still prose',
+  withDescription('Android: Kotlin, Gradle, and //100% coverage.'), 0);
+
+// The api-catalog hrefs ran the same string-prefix test and had the same blind
+// spot, so the single helper closes both. Same for the robots.txt Agentmap.
+testFiles('an api-catalog href of //jaredsburrows.com/api/nope.json fails closed', {
+  '.well-known/api-catalog': originalCatalog.replace(
+    'https://jaredsburrows.com/api/openapi.json', '//jaredsburrows.com/api/nope.json'),
+}, 1, '.well-known/api-catalog entry 1 references missing file /api/nope.json');
+
+testFiles('an api-catalog href on a lookalike host is not checked against this tree', {
+  '.well-known/api-catalog': originalCatalog.replace(
+    'https://jaredsburrows.com/api/openapi.json', 'https://jaredsburrows.com.evil.test/api/nope.json'),
+}, 0);
+
+testFiles('a robots.txt Agentmap of //jaredsburrows.com/.well-known/nope.json fails closed', {
+  'robots.txt': originalRobots.replace(/^Agentmap:.*$/m, 'Agentmap: //jaredsburrows.com/.well-known/nope.json'),
+}, 1, 'robots.txt Agentmap references missing file /.well-known/nope.json');
+
+// --- S19: the HTML tokenizer ends script data at `</script` followed by a
+// space, tab, LF, FF, `/` or `>`, while the block match only stops at a
+// literal `</script>`. Every body below is valid JSON and was read in full —
+// and reported clean — while a browser or scraper stopped at the breakout and
+// parsed the rest as markup, into a page whose script-src is 'self'
+// 'unsafe-inline'. Nothing in the committed blocks is anywhere near this
+// today; the guard is what keeps the class closed as `description` and the
+// other free-prose fields get edited again.
+const addJsonLdField = (field) =>
+  mutateJsonLd((body) => body.replace(/("@type"\s*:)/, `${field},\n        $1`));
+assert.notStrictEqual(addJsonLdField('"x": 1'), originalIndexHtml,
+  'fixture assumption broken: the JSON-LD block has no @type to insert a field before');
+
+// The comment family needs more than `-->`: the tokenizer has a
+// comment-end-BANG state, so `--!>` closes a comment too, and the abrupt-close
+// forms `<!-->` and `<!--->` are whole comments in themselves. A guard that
+// knew only `-->` was incomplete in exactly the way S19 is about (CodeQL
+// js/bad-tag-filter, alert 8 on PR #147) — these blocks sit BETWEEN HTML
+// comments, so a body carrying one of these ends a construct a reader thinks
+// encloses it.
+for (const [breakout, why] of [
+  ['</script  >', 'whitespace after the tag name ends it just as `>` does'],
+  ['</script/>', 'a slash ends it too'],
+  ['<!--', 'a comment opener moves the tokenizer into script-data-escaped state'],
+  ['-->', 'and a comment closer moves it back out'],
+  ['--!>', 'the comment-end-bang state ends a comment on --!> as surely as on -->'],
+  ['<!-->', 'an abrupt-closed empty comment, caught by the <!-- branch'],
+  ['<!--->', 'the same with the dash the comment-start-dash state swallows'],
+]) {
+  testFiles(`a JSON-LD string containing ${breakout} fails closed (${why})`, {
+    'index.html': addJsonLdField(`"alternateName": "x${breakout}<script>alert(1)<\\/script>"`),
+  }, 1, 'index.html JSON-LD block 1 contains a sequence that ends the script element early');
+}
+
+// … and the escape the message tells the author to use has to actually pass,
+// or the guard just moves the problem: `<\/script` is the same string to JSON
+// and invisible to every HTML tokenizer.
+testFiles('a JSON-LD string with a correctly escaped <\\/script passes', {
+  'index.html': addJsonLdField('"alternateName": "x<\\/script><script>alert(1)<\\/script>"'),
+}, 0);
+
+// --- S20: the same-origin walk recursed once per nesting level and was called
+// outside the try guarding JSON.parse, so a deep block threw an uncaught
+// RangeError — a stack trace with no message and no file name, and none of the
+// four invariants declared after the JSON-LD loop (API catalog, auth.md
+// discovery, _headers overlap, _redirects syntax) ever ran. Deleting auth.md
+// alongside the deep block is what proves they run now: before the fix that
+// second error was never reported at all.
+const NESTED_LEVELS = 20000;
+const nestedBlock = (levels) =>
+  `{"@context": "https://schema.org", "@type": "Person", "deep": ${'{"a": '.repeat(levels)}1${'}'.repeat(levels)}}`;
+
+testFiles(`a JSON-LD block nested ${NESTED_LEVELS} levels deep fails by name, and the checks after it still run`, {
+  'index.html': withSecondBlock(nestedBlock(NESTED_LEVELS)),
+  'auth.md': null,
+}, 1, ['index.html JSON-LD block 2 nests more than', 'auth.md is missing']);
+
+// The depth cap is far above anything hand-written: ordinary nesting passes.
+testFiles('an ordinarily nested JSON-LD block passes', {
+  'index.html': withSecondBlock(nestedBlock(20)),
+}, 0);
 // --- /index.md, the markdown twin of the homepage. For an agent that sends
 // `Accept: text/markdown` src/worker.mjs makes this file the homepage, and
 // nothing renders it, so every mutation below ships a broken or stale homepage
 // to agents against a green browser experience and an otherwise green build.
-const originalIndexMd = fs.readFileSync(path.join(repoRoot, 'index.md'), 'utf8');
 const originalTalksJson = fs.readFileSync(path.join(repoRoot, 'api/talks.json'), 'utf8');
 const ALTERNATE_LINK = '<link rel="alternate" type="text/markdown" href="/index.md">';
 assert.ok(/^#[ \t]+\S/.test(originalIndexMd),
@@ -791,27 +968,6 @@ testFiles('the unmodified TTLs on /static/* and /api/* still pass',
 // can hold it to the files it restates. Each mutation below leaves a green
 // browser experience and a green build while an agent reading /index.md is
 // served something the site no longer says.
-const META_DESCRIPTION = (originalIndexHtml.match(/<meta name="description" content="([^"]*)">/) ?? [])[1];
-assert.ok(META_DESCRIPTION, 'fixture assumption broken: index.html has no <meta name="description">');
-// B3: the description is the twin's summary blockquote, not its first
-// paragraph — anything under it carries only what the summary does not say.
-// Read as "the block after the H1", never as a hardcoded line range: the
-// summary is soft-wrapped, so a re-wrap or a longer description changes how
-// many lines it occupies, and a slice would then compare the wrong text —
-// a test that passes for the wrong reason rather than one that fails loudly.
-const blockAfterH1 = (markdown) => {
-  const lines = markdown.split('\n').slice(1);
-  const start = lines.findIndex((line) => line.trim() !== '');
-  const end = lines.findIndex((line, index) => index > start && line.trim() === '');
-  return lines.slice(start, end === -1 ? undefined : end);
-};
-const SUMMARY_BLOCKQUOTE = blockAfterH1(originalIndexMd);
-assert.strictEqual(
-  SUMMARY_BLOCKQUOTE.map((line) => line.trim().replace(/^>[ \t]?/, '')).join(' '), META_DESCRIPTION,
-  'fixture assumption broken: index.md no longer quotes the meta description as its summary blockquote');
-assert.ok(SUMMARY_BLOCKQUOTE.every((line) => line.startsWith('> ')),
-  'fixture assumption broken: index.md summary is no longer a blockquote');
-
 // The sentence exists twice — once as the meta description, once as the twin's
 // summary — and nothing renders both, so only a comparison catches a one-sided
 // edit. Both sides are tested: either file can be the one that moves.
