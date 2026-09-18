@@ -55,6 +55,8 @@ Gradle Summit — Palo Alto, CA, USA — 2017-06-22.
   [`/.well-known/ai-catalog.json`](/.well-known/ai-catalog.json).
 - Authentication: none, ever. See [`/auth.md`](/auth.md).
 - Crawl and training permissions: [`/robots.txt`](/robots.txt).
+- An index of all of the above, in the llms.txt format:
+  [`/llms.txt`](/llms.txt).
 
 ## Contact
 
