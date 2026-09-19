@@ -349,3 +349,29 @@ test('the HTML branch keeps the cache headers the asset router gave it', async (
   // added there is validate-site.js's half of the same invariant.
   assert.equal(response.headers.get('cache-control'), UNCACHEABLE);
 });
+test('/mcp is handed to the MCP server, not the asset router', async () => {
+  const env = homepage();
+  const response = await worker.fetch(new Request('https://jaredsburrows.com/mcp', {
+    method: 'OPTIONS',
+  }), env);
+  assert.equal(response.status, 204, 'the MCP preflight, not a 404 from the assets stub');
+  assert.equal(response.headers.get('access-control-allow-origin'), '*');
+  assert.equal(env.requests.length, 0, '/mcp must never reach the asset router');
+});
+
+test('/mcp/server-card is not captured by the /mcp route', async () => {
+  const env = stubAssets({ '/mcp/server-card': new Response('{}', {
+    headers: { 'content-type': 'application/mcp-server-card+json' },
+  }) });
+  const response = await worker.fetch(new Request('https://jaredsburrows.com/mcp/server-card'), env);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'application/mcp-server-card+json',
+    'the card is a static asset — run_worker_first is exact-match on /mcp');
+});
+
+test('/ is unaffected by the second route', async () => {
+  const env = homepage();
+  const response = await worker.fetch(new Request('https://jaredsburrows.com/'), env);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'text/html; charset=utf-8');
+});
