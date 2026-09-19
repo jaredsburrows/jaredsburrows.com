@@ -615,6 +615,157 @@ for (const [, declared] of robotsTxt.matchAll(/^[ \t]*Agentmap:[ \t]*(\S+)[ \t]*
   if (reference !== undefined) checkLocal('robots.txt Agentmap', reference);
 }
 
+// --- MCP server card. One document published at three paths, advertising a
+// server that lives in src/mcp.mts, discovered through a manifest entry in a
+// fourth file. Four things that must agree and nothing at runtime that
+// notices when they stop: a card naming a tool the server dropped sends an
+// agent to call something that errors, and a stale endpoint sends it nowhere
+// at all. Worse than publishing no card, because a card invites the attempt.
+const MCP_CATALOG_ID = 'urn:air:jaredsburrows.com:mcp:talks';
+const CARD_PATHS = [
+  'mcp/server-card',
+  '.well-known/mcp/server-card.json',
+  '.well-known/mcp.json',
+];
+const CARD_MEDIA_TYPE = 'application/mcp-server-card+json';
+const CARD_SCHEMA = 'https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json';
+const MCP_ENDPOINT = 'https://jaredsburrows.com/mcp';
+
+const cardText = new Map();
+for (const name of CARD_PATHS) {
+  try {
+    cardText.set(name, read(name));
+  } catch (error) {
+    bad(`${name} is missing — the server card is published at all three paths (${messageOf(error)})`);
+  }
+}
+
+// Byte equality, like the ARD pair above and for the same reason: the copies
+// exist so an agent gets the same bytes whichever path its spec revision
+// tells it to try.
+const [canonicalCard] = CARD_PATHS;
+for (const name of CARD_PATHS.slice(1)) {
+  if (cardText.has(name) && cardText.has(canonicalCard) && cardText.get(name) !== cardText.get(canonicalCard)) {
+    bad(`${name} and ${canonicalCard} are not byte-identical — edit ${canonicalCard} and copy it to the other paths in the same commit`);
+  }
+}
+
+// The server is the source of truth for its own identity and tool list; the
+// card only restates it. Read the module's text rather than importing it:
+// validate-site.js is CommonJS and mcp.mts is TypeScript ESM — require() cannot
+// load it, and this file is checked by tsc but never compiled. A regex over
+// the exported constants is enough to catch the drift this guards against.
+const mcpSource = (() => {
+  try {
+    return read('src/mcp.mts');
+  } catch (error) {
+    bad(`src/mcp.mts is missing, but the server card advertises it (${messageOf(error)})`);
+    return '';
+  }
+})();
+/** @param {string} name @returns {string | undefined} */
+const constantIn = (name) => new RegExp(`export const ${name} = '([^']+)'`).exec(mcpSource)?.[1];
+const serverVersion = constantIn('SERVER_VERSION');
+const serverName = constantIn('SERVER_NAME');
+const protocolVersion = constantIn('PROTOCOL_VERSION');
+const exportedTools = [...mcpSource.matchAll(/^\s{4}name: '([a-z_]+)',$/gm)].map((match) => match[1]);
+
+if (cardText.has(canonicalCard)) {
+  const card = parseJson(canonicalCard);
+  if (card) {
+    if (card.$schema !== CARD_SCHEMA) {
+      bad(`${canonicalCard} has $schema ${JSON.stringify(card.$schema)}, but the SEP-2127 schema pins it to ${CARD_SCHEMA}`);
+    }
+    if (!/^[a-zA-Z0-9.-]+\/[a-zA-Z0-9._-]+$/.test(card.name ?? '')) {
+      bad(`${canonicalCard} name ${JSON.stringify(card.name)} is not reverse-DNS with exactly one slash, which the card schema requires`);
+    }
+    const remote = card.remotes?.[0];
+    if (remote?.url !== MCP_ENDPOINT) {
+      bad(`${canonicalCard} remotes[0].url is ${JSON.stringify(remote?.url)} but the Worker serves ${MCP_ENDPOINT}`);
+    }
+    if (card.endpoint !== remote?.url) {
+      bad(`${canonicalCard} endpoint ${JSON.stringify(card.endpoint)} disagrees with remotes[0].url ${JSON.stringify(remote?.url)} — the two shapes must state the same endpoint`);
+    }
+    if (protocolVersion && !remote?.supportedProtocolVersions?.includes(protocolVersion)) {
+      bad(`${canonicalCard} does not list ${protocolVersion}, the only revision src/mcp.mts implements`);
+    }
+    if (serverName && card.name !== serverName) {
+      bad(`${canonicalCard} name ${JSON.stringify(card.name)} disagrees with SERVER_NAME in src/mcp.mts`);
+    }
+    if (serverVersion && card.version !== serverVersion) {
+      bad(`${canonicalCard} version ${JSON.stringify(card.version)} disagrees with SERVER_VERSION in src/mcp.mts`);
+    }
+    if (serverVersion && card.serverInfo?.version !== card.version) {
+      bad(`${canonicalCard} serverInfo.version disagrees with its own version field`);
+    }
+    // The tool list is the claim most likely to rot: tools get added and
+    // renamed in mcp.mts, and nothing but this line notices the card did not
+    // follow.
+    const claimed = card.capabilities?.tools ?? [];
+    if (exportedTools.length > 0) {
+      for (const tool of claimed) {
+        if (!exportedTools.includes(tool)) {
+          bad(`${canonicalCard} advertises a tool ${JSON.stringify(tool)} that src/mcp.mts does not export`);
+        }
+      }
+      for (const tool of exportedTools) {
+        if (!claimed.includes(tool)) {
+          bad(`src/mcp.mts exports a tool ${JSON.stringify(tool)} that ${canonicalCard} does not advertise`);
+        }
+      }
+    }
+  }
+}
+
+// The canonical path has no extension, so Cloudflare infers no type for it at
+// all — the rule is the only thing between the card and a typeless response.
+// The two .json copies would be served as application/json without a rule,
+// which is wrong but not silent, so all three are checked the same way.
+for (const name of CARD_PATHS) {
+  const rule = headerRuleValues(`/${name}`);
+  if (!rule) {
+    bad(`_headers has no /${name} rule, so the card is not served as ${CARD_MEDIA_TYPE}`);
+    continue;
+  }
+  if (!rule.some((line) => new RegExp(`^Content-Type:\\s*${CARD_MEDIA_TYPE.replace('+', '\\+')}\\b`, 'i').test(line))) {
+    bad(`_headers does not set Content-Type: ${CARD_MEDIA_TYPE} on /${name}`);
+  }
+  if (!rule.some((line) => /^Access-Control-Allow-Origin:\s*\*/i.test(line))) {
+    bad(`_headers does not set Access-Control-Allow-Origin on /${name}, which hosted card endpoints MUST do so browser agents can read them`);
+  }
+}
+
+// The manifest entry is how SEP-2127 says a client finds the card at all. The
+// ARD loop above already checks that its url resolves to a file in this tree;
+// what it cannot know is that this particular entry must be typed as a server
+// card. A wrong media type here means a client scanning the manifest for cards
+// skips the entry entirely, and the card may as well not be published.
+for (const name of ARD_PATHS) {
+  const manifest = ardText.has(name) ? parseJson(name) : undefined;
+  const entry = manifest?.entries?.find((/** @type {{ identifier?: string }} */ candidate) => candidate.identifier === MCP_CATALOG_ID);
+  if (!entry) {
+    bad(`${name} has no ${MCP_CATALOG_ID} entry, so nothing points a client at the server card`);
+    continue;
+  }
+  if (entry.type !== CARD_MEDIA_TYPE) {
+    bad(`${name} types ${MCP_CATALOG_ID} as ${JSON.stringify(entry.type)}; SEP-2127 requires ${CARD_MEDIA_TYPE}`);
+  }
+  if (entry.url !== `${MCP_ENDPOINT}/server-card`) {
+    bad(`${name} points ${MCP_CATALOG_ID} at ${JSON.stringify(entry.url)} rather than the canonical card at ${MCP_ENDPOINT}/server-card`);
+  }
+}
+
+// Redirects fire ahead of the Worker, so a rule matching /mcp would shadow the
+// endpoint entirely and the card would advertise a 302. `redirects` is already
+// read at the top of this file (line 49) for the _redirects syntax check.
+for (const line of redirects.split('\n')) {
+  const [from] = line.trim().split(/\s+/);
+  if (from === '/mcp' || from === '/mcp/') {
+    bad(`_redirects sends ${from} elsewhere, which would shadow the MCP endpoint the server card advertises`);
+  }
+}
+
+
 // --- /auth.md discovery: agent tooling finds this document by fetching
 // /auth.md and matching an H1 that contains "auth.md". Both the file and the
 // heading are load-bearing, and neither failure is visible anywhere else in
@@ -964,4 +1115,4 @@ if (errors.length > 0) {
   for (const message of errors) console.error(`  - ${message}`);
   process.exit(1);
 }
-console.log('✓ site invariants hold (CSP parity + coverage, id contract, file references, JSON-LD, auth.md discovery, markdown twin, llms.txt index, API catalog, ARD manifest, _headers overlap, / stays uncacheable, _redirects syntax)');
+console.log('✓ site invariants hold (CSP parity + coverage, id contract, file references, JSON-LD, auth.md discovery, markdown twin, llms.txt index, API catalog, ARD manifest, MCP server card, _headers overlap, / stays uncacheable, _redirects syntax)');

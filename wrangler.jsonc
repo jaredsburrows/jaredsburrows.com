@@ -17,9 +17,11 @@
     // the Worker reads /index.md and how everything it does not negotiate is
     // served: without this the script has no way to reach the files at all.
     "binding": "ASSETS",
-    // Exactly one route-first pattern. Broadening this (or setting it to true)
-    // would put every request for every asset through a billed invocation.
-    "run_worker_first": ["/"]
+    // Exactly two route-first patterns, both exact matches. Broadening either
+    // (or setting this to true) would put every request for every asset through
+    // a billed invocation. "/mcp" does not capture "/mcp/server-card": the card
+    // is a static asset, checked under `wrangler dev`.
+    "run_worker_first": ["/", "/mcp"]
   },
   // Observability on, as #139 set it. Both switches have to say so: wrangler's
   // normalizeObservability only fills fields that are `undefined` and the deploy
