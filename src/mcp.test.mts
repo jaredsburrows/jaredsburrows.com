@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { talkId, loadTalks, TOOLS, callTool, talkSummary, decodeHeaderValue, dispatch,
+import { talkId, loadTalks, TOOLS, callTool, talkSummary, decodeHeaderValue, dispatch, handleMcp,
          PROTOCOL_VERSION, SERVER_NAME, SERVER_VERSION } from './mcp.mts';
 import type { ToolResult, TalkSummary, TalkDetail, Env, RpcError } from './mcp.mts';
 
@@ -273,4 +273,161 @@ test('a null id is an invalid request', async () => {
   message.id = null;
   const error = await errorOf(message, stubAssets());
   assert.equal(error.code, -32600, 'MCP forbids a null id, unlike base JSON-RPC');
+});
+
+/** Overrides a case needs: extra or replacement headers, or a raw unparsed body. */
+interface PostOptions {
+  headers?: Record<string, string>;
+  /** Sent verbatim instead of JSON.stringify(body) — for malformed-body cases. */
+  raw?: string;
+}
+
+/** POSTs a body with the headers this revision requires. */
+const post = (body: Payload | null, { headers = {}, raw }: PostOptions = {}): Request =>
+  new Request('https://jaredsburrows.com/mcp', {
+  method: 'POST',
+  headers: {
+    'content-type': 'application/json',
+    'mcp-protocol-version': PROTOCOL_VERSION,
+    'mcp-method': body?.method ?? 'tools/list',
+    ...(body?.method === 'tools/call' ? { 'mcp-name': body.params.name } : {}),
+    ...headers,
+  },
+  body: raw ?? JSON.stringify(body),
+});
+
+test('a well-formed tools/list is 200 application/json', async () => {
+  const response = await handleMcp(post(rpc('tools/list')), stubAssets());
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'application/json');
+  assert.equal(response.headers.get('access-control-allow-origin'), '*');
+  const body = (await response.json()) as Payload;
+  assert.equal(body.id, 1);
+  assert.equal(body.result.tools.length, 2);
+});
+
+test('an unknown method is 404, which is how a client spots a modern server', async () => {
+  const response = await handleMcp(post(rpc('prompts/list')), stubAssets());
+  assert.equal(response.status, 404);
+  assert.equal(((await response.json()) as Payload).error.code, -32601);
+});
+
+test('an unsupported version is 400 and lists what is supported', async () => {
+  const message = rpc('tools/list');
+  message.params._meta['io.modelcontextprotocol/protocolVersion'] = '2025-06-18';
+  const response = await handleMcp(
+    post(message, { headers: { 'mcp-protocol-version': '2025-06-18' } }), stubAssets());
+  assert.equal(response.status, 400);
+  const body = (await response.json()) as Payload;
+  assert.equal(body.error.code, -32022);
+  assert.deepEqual(body.error.data.supported, [PROTOCOL_VERSION]);
+});
+
+test('a MCP-Protocol-Version header that disagrees with the body is a header mismatch', async () => {
+  const response = await handleMcp(
+    post(rpc('tools/list'), { headers: { 'mcp-protocol-version': '2025-11-25' } }), stubAssets());
+  assert.equal(response.status, 400);
+  assert.equal(((await response.json()) as Payload).error.code, -32020);
+});
+
+test('a missing MCP-Protocol-Version header is a header mismatch', async () => {
+  const request = post(rpc('tools/list'));
+  request.headers.delete('mcp-protocol-version');
+  const response = await handleMcp(request, stubAssets());
+  assert.equal(response.status, 400);
+  assert.equal(((await response.json()) as Payload).error.code, -32020);
+});
+
+test('an Mcp-Method header that disagrees with the body is a header mismatch', async () => {
+  const response = await handleMcp(
+    post(rpc('tools/list'), { headers: { 'mcp-method': 'tools/call' } }), stubAssets());
+  assert.equal(response.status, 400);
+  assert.equal(((await response.json()) as Payload).error.code, -32020);
+});
+
+test('tools/call requires an Mcp-Name header matching params.name', async () => {
+  const body = rpc('tools/call', { name: 'list_talks', arguments: {} });
+  const response = await handleMcp(
+    post(body, { headers: { 'mcp-name': 'get_talk' } }), stubAssets());
+  assert.equal(response.status, 400);
+  assert.equal(((await response.json()) as Payload).error.code, -32020);
+});
+
+test('a base64-encoded Mcp-Name is decoded before it is compared', async () => {
+  const body = rpc('tools/call', { name: 'list_talks', arguments: {} });
+  const encoded = `=?base64?${Buffer.from('list_talks', 'utf8').toString('base64')}?=`;
+  const response = await handleMcp(post(body, { headers: { 'mcp-name': encoded } }), stubAssets());
+  assert.equal(response.status, 200, 'the sentinel form is legal and must not be compared raw');
+});
+
+test('a notification is 202 with no body', async () => {
+  const notification = {
+    jsonrpc: '2.0',
+    method: 'notifications/progress',
+    params: {
+      _meta: {
+        'io.modelcontextprotocol/protocolVersion': PROTOCOL_VERSION,
+        'io.modelcontextprotocol/clientCapabilities': {},
+      },
+    },
+  };
+  const response = await handleMcp(
+    post(notification, { headers: { 'mcp-method': 'notifications/progress' } }), stubAssets());
+  assert.equal(response.status, 202);
+  assert.equal(await response.text(), '');
+});
+
+test('GET and DELETE are 405 — this revision has no GET stream and no sessions', async () => {
+  for (const method of ['GET', 'DELETE']) {
+    const response = await handleMcp(
+      new Request('https://jaredsburrows.com/mcp', { method }), stubAssets());
+    assert.equal(response.status, 405, `${method} should not be allowed`);
+    assert.match(response.headers.get('allow') ?? '', /POST/);
+  }
+});
+
+test('OPTIONS is a CORS preflight a browser agent can use', async () => {
+  const response = await handleMcp(
+    new Request('https://jaredsburrows.com/mcp', { method: 'OPTIONS' }), stubAssets());
+  assert.equal(response.status, 204);
+  assert.equal(response.headers.get('access-control-allow-origin'), '*');
+  assert.match(response.headers.get('access-control-allow-headers') ?? '', /mcp-protocol-version/i);
+});
+
+test('Mcp-Session-Id and Last-Event-ID are ignored, and no session is minted', async () => {
+  const response = await handleMcp(post(rpc('tools/list'), {
+    headers: { 'mcp-session-id': 'abc', 'last-event-id': '7' },
+  }), stubAssets());
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('mcp-session-id'), null,
+    'echoing a session id would tell a legacy client this server keeps state');
+});
+
+test('a non-JSON content type is refused before the body is parsed', async () => {
+  const response = await handleMcp(
+    post(rpc('tools/list'), { headers: { 'content-type': 'text/plain' } }), stubAssets());
+  assert.equal(response.status, 415);
+});
+
+test('an oversized body is refused before it is parsed', async () => {
+  const response = await handleMcp(post(null, {
+    raw: JSON.stringify({ padding: 'x'.repeat(70000) }),
+    headers: { 'mcp-method': 'tools/list' },
+  }), stubAssets());
+  assert.equal(response.status, 413);
+});
+
+test('a malformed body is a parse error', async () => {
+  const response = await handleMcp(
+    post(null, { raw: '{not json', headers: { 'mcp-method': 'tools/list' } }), stubAssets());
+  assert.equal(response.status, 400);
+  assert.equal(((await response.json()) as Payload).error.code, -32700);
+});
+
+test('a JSON-RPC batch is refused — this revision has no batching', async () => {
+  const response = await handleMcp(
+    post(null, { raw: JSON.stringify([rpc('tools/list')]), headers: { 'mcp-method': 'tools/list' } }),
+    stubAssets());
+  assert.equal(response.status, 400);
+  assert.equal(((await response.json()) as Payload).error.code, -32600);
 });

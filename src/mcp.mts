@@ -368,3 +368,158 @@ export async function dispatch(message: unknown, env: Env): Promise<Dispatched> 
       return errorResponse(METHOD_NOT_FOUND, `This server does not implement ${request.method}.`);
   }
 }
+const PARSE_ERROR = -32700;
+
+/** Bounds the work one anonymous POST can cause on a metered account. */
+const MAX_BODY_BYTES = 65536;
+
+/**
+ * CORS for every response this endpoint makes.
+ *
+ * The transport spec makes validating `Origin` a MUST, to stop DNS rebinding
+ * from reaching a local server that holds ambient authority. This server is
+ * public, read-only, holds no credential and no session, and returns data
+ * already served at /api/talks.json — so every origin is genuinely valid, and
+ * saying so plainly is more honest than an allowlist that would protect
+ * nothing. Browser-based agents are a reason this endpoint exists at all.
+ */
+const CORS_HEADERS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'POST, OPTIONS',
+  'access-control-allow-headers': 'Content-Type, MCP-Protocol-Version, Mcp-Method, Mcp-Name',
+  'access-control-max-age': '86400',
+};
+
+/** A JSON-RPC id: string or number, or absent when the id could not be read. */
+type RpcId = string | number | undefined;
+
+const json = (body: object, status: number): Response => new Response(JSON.stringify(body), {
+  status,
+  headers: { 'content-type': 'application/json', ...CORS_HEADERS },
+});
+
+const rpcError = (
+  id: RpcId,
+  code: number,
+  message: string,
+  status: number,
+  data?: unknown,
+): Response => json({
+  jsonrpc: '2.0',
+  ...(id === undefined ? {} : { id }),
+  error: { code, message, ...(data === undefined ? {} : { data }) },
+}, status);
+
+/**
+ * The HTTP status an error code is delivered with.
+ *
+ * These are not decoration. A client distinguishes a modern MCP server from a
+ * legacy one by the status: 404 with a JSON-RPC body means "this server speaks
+ * MCP and has no such method", while a bare 404 means "no MCP endpoint here".
+ * Returning 200 for an unknown method would make this server undetectable.
+ */
+const STATUS_FOR: Record<number, number> = {
+  [METHOD_NOT_FOUND]: 404,
+  [INVALID_REQUEST]: 400,
+  [INVALID_PARAMS]: 400,
+  [HEADER_MISMATCH]: 400,
+  [UNSUPPORTED_PROTOCOL_VERSION]: 400,
+  [PARSE_ERROR]: 400,
+};
+
+/** Serves `POST /mcp`. */
+export async function handleMcp(request: Request, env: Env): Promise<Response> {
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: { ...CORS_HEADERS, allow: 'POST, OPTIONS' } });
+  }
+  // GET and DELETE were the legacy standalone SSE stream and session teardown.
+  // Neither exists in this revision, and 405 is what the spec says to answer an
+  // older client that still tries.
+  if (request.method !== 'POST') {
+    return new Response(null, { status: 405, headers: { ...CORS_HEADERS, allow: 'POST, OPTIONS' } });
+  }
+
+  const contentType = request.headers.get('content-type') ?? '';
+  if (!/^application\/json\b/i.test(contentType)) {
+    return rpcError(undefined, INVALID_REQUEST, 'The MCP endpoint accepts application/json only.', 415);
+  }
+
+  const body = await request.text();
+  // Measured in bytes, not characters: a body of multi-byte characters is
+  // larger than its length suggests, and the cap exists to bound bytes.
+  if (new TextEncoder().encode(body).length > MAX_BODY_BYTES) {
+    return rpcError(undefined, INVALID_REQUEST, `Request bodies are limited to ${MAX_BODY_BYTES} bytes.`, 413);
+  }
+
+  let message: unknown;
+  try {
+    message = JSON.parse(body);
+  } catch (error) {
+    // `catch` binds `unknown` under strict, and a thrown non-Error has no
+    // .message — so the reason is read defensively rather than assumed.
+    const reason = error instanceof Error ? error.message : String(error);
+    return rpcError(undefined, PARSE_ERROR, `The request body is not valid JSON: ${reason}`, 400);
+  }
+
+  // The id is echoed on the error response, so it is read before the body has
+  // been shown to be a valid request at all — and only when it is the type MCP
+  // allows. Anything else (including null) is left off the response entirely.
+  const rawId = message !== null && typeof message === 'object' && !Array.isArray(message)
+    ? (message as Record<string, unknown>).id
+    : undefined;
+  const id: RpcId = typeof rawId === 'string' || typeof rawId === 'number' ? rawId : undefined;
+
+  // Header/body agreement, before anything reads the body's meaning. An
+  // intermediary may route on the header while this server acts on the body, so
+  // the two disagreeing is a security problem rather than a cosmetic one.
+  const mismatch = headerMismatch(request, message);
+  if (mismatch) return rpcError(id, HEADER_MISMATCH, mismatch, 400);
+
+  // A notification has no id and gets no response body — only an acknowledgement.
+  const isNotification = message !== null && typeof message === 'object'
+    && !Array.isArray(message) && !('id' in message);
+  if (isNotification) {
+    return new Response(null, { status: 202, headers: CORS_HEADERS });
+  }
+
+  const answer = await dispatch(message, env);
+  if (answer.error) {
+    return rpcError(id, answer.error.code, answer.error.message,
+      STATUS_FOR[answer.error.code] ?? 400, answer.error.data);
+  }
+  return json({ jsonrpc: '2.0', id, result: answer.result }, 200);
+}
+
+/** The reason the mirrored headers disagree with the body, or null when they agree. */
+function headerMismatch(request: Request, message: unknown): string | null {
+  const body = (message !== null && typeof message === 'object' && !Array.isArray(message)
+    ? message
+    : {}) as Record<string, unknown>;
+  const params = (body.params ?? {}) as Record<string, unknown>;
+  const meta = (params._meta ?? {}) as Record<string, unknown>;
+
+  const version = decodeHeaderValue(request.headers.get('mcp-protocol-version'));
+  if (version === null) {
+    return 'Every POST must carry an MCP-Protocol-Version header.';
+  }
+  const bodyVersion = meta[META_PROTOCOL_VERSION];
+  if (typeof bodyVersion === 'string' && bodyVersion !== version) {
+    return `MCP-Protocol-Version header ${JSON.stringify(version)} does not match the body's ${JSON.stringify(bodyVersion)}.`;
+  }
+
+  const method = decodeHeaderValue(request.headers.get('mcp-method'));
+  if (method === null) return 'Every POST must carry an Mcp-Method header.';
+  if (typeof body.method === 'string' && body.method !== method) {
+    return `Mcp-Method header ${JSON.stringify(method)} does not match the body's ${JSON.stringify(body.method)}.`;
+  }
+
+  // Mcp-Name mirrors params.name, and is required for the calls that have one.
+  if (body.method === 'tools/call') {
+    const name = decodeHeaderValue(request.headers.get('mcp-name'));
+    if (name === null) return 'tools/call must carry an Mcp-Name header.';
+    if (typeof params.name === 'string' && params.name !== name) {
+      return `Mcp-Name header ${JSON.stringify(name)} does not match the body's ${JSON.stringify(params.name)}.`;
+    }
+  }
+  return null;
+}
