@@ -28,7 +28,7 @@
 // not a `--no-save` line like vnu-jar, because a second `--no-save` install
 // prunes whatever the first one added, even with a manifest present.
 //
-// Run: npm ci && node --test .github/embed-referrerpolicy.test.mjs
+// Run: npm ci && node --test .github/embed-referrerpolicy.test.mts
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -42,8 +42,8 @@ import jsdom from 'jsdom';
 const { JSDOM, VirtualConsole, requestInterceptor } = jsdom;
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-/** @param {string} name Path relative to the repo root. */
-const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
+/** @param name Path relative to the repo root. */
+const read = (name: string) => fs.readFileSync(path.join(root, name), 'utf8');
 
 const SITE_ORIGIN = 'https://jaredsburrows.com';
 
@@ -79,10 +79,9 @@ const cspFrameSources = () => {
 // origin or a single leading `*.` label wildcard, which does NOT match the
 // apex it is a wildcard of.
 /**
- * @param {string} origin
- * @param {string[]} sources The tokens after the directive name.
+ * @param sources The tokens after the directive name.
  */
-const allowedBy = (origin, sources) => sources.some((source) =>
+const allowedBy = (origin: string, sources: string[]) => sources.some((source) =>
   source === origin
   || (source.startsWith('https://*.') && origin.startsWith('https://')
       && origin.slice('https://'.length).endsWith(`.${source.slice('https://*.'.length)}`)));
@@ -94,8 +93,8 @@ const allowedBy = (origin, sources) => sources.some((source) =>
 // empty 200 (a failed load would only add console noise — no invariant below
 // depends on gtag.js, GTM or the embed documents themselves).
 const mount = async () => {
-  /** @type {string[]} Same-origin pathnames the page actually asked for. */
-  const served = [];
+  /** Same-origin pathnames the page actually asked for. */
+  const served: string[] = [];
   const intercept = requestInterceptor((request) => {
     if (request.url.startsWith(`${SITE_ORIGIN}/`)) {
       const { pathname } = new URL(request.url);
@@ -120,8 +119,7 @@ const mount = async () => {
     return new Response('', { headers: { 'Content-Type': 'text/plain' } });
   });
 
-  /** @type {string[]} */
-  const failures = [];
+  const failures: string[] = [];
   const virtualConsole = new VirtualConsole();
   virtualConsole.on('jsdomError', (error) => failures.push(error.message));
 
@@ -156,7 +154,7 @@ const mount = async () => {
   // accordion is driven. Every row, because a per-talk difference (only one
   // provider protected, or only the first talk) must not hide behind a
   // spot check. Rows stay expanded-or-not; the embeds they built stay mounted.
-  const rows = [...(/** @type {NodeListOf<HTMLElement>} */ (dom.window.document.querySelectorAll('.talk-row')))];
+  const rows = [...(dom.window.document.querySelectorAll('.talk-row') as NodeListOf<HTMLElement>)];
   for (const row of rows) row.click();
 
   return { window: dom.window, document: dom.window.document, rows, served, failures };
@@ -211,7 +209,7 @@ test('expanding the accordion mounts an embed for every talk that has one', () =
   const sources = crossOriginIframes().map(({ src }) => src);
   const expected = (page.window.TALKS ?? []).flatMap((talk) =>
     [talk.youtube, talk.speakerdeck].filter((id) => id !== undefined)
-      .map((id) => /** @type {[string, string]} */ ([talk.title, id])));
+      .map((id) => [talk.title, id] as [string, string]));
   assert.ok(expected.length > 0, 'no talk in talks.js has a video or slide deck to embed');
   for (const [title, id] of expected) {
     assert.ok(sources.some((src) => src.includes(id)),
@@ -236,7 +234,7 @@ test('every element in the mounted page that sets a referrerpolicy sets an allow
   const carriers = referrerPolicyCarriers();
   assert.ok(carriers.length > 0, 'the mounted page sets referrerpolicy on nothing at all');
   for (const node of carriers) {
-    const policy = /** @type {string} */ (node.getAttribute('referrerpolicy'));
+    const policy = node.getAttribute('referrerpolicy') as string;
     const where = `<${node.localName}${node.getAttribute('src') || node.getAttribute('href') ? ` ${node.getAttribute('src') ?? node.getAttribute('href')}` : ''}>`;
     assert.ok(ALLOWED_REFERRER_POLICIES.includes(policy.toLowerCase()),
       `${where} has referrerpolicy '${policy}' — only ${ALLOWED_REFERRER_POLICIES.join(' or ')} may be used (weaker values leak more than the origin; no-referrer/same-origin bring back Error 153 on the embeds, and a padded or misspelled value is the invalid-value default, i.e. no attribute at all)`);

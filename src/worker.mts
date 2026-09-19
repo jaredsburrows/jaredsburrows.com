@@ -50,7 +50,7 @@ const MARKDOWN_ASSET = '/index.md';
  * headers: the response below is `/index.md`'s, returned under the URL `/`, so
  * any `_headers` rule matching `/index.md` — a TTL there looks exactly as
  * reasonable as the one on `/static/js/*` — would otherwise land its
- * `Cache-Control` on `/` (SECURITY.md S6). `validate-site.js` independently
+ * `Cache-Control` on `/` (SECURITY.md S6). `validate-site.ts` independently
  * refuses a TTL on `/` itself; neither control covers the other's route.
  */
 const UNCACHEABLE = 'public, max-age=0, must-revalidate';
@@ -248,7 +248,7 @@ export default {
       }));
       // A missing or broken twin is a bug; serving no homepage at all is an
       // outage. So anything other than a healthy asset falls through to the HTML
-      // below, where CI (validate-site.js) is what keeps the twin honest. A 304
+      // below, where CI (validate-site.ts) is what keeps the twin honest. A 304
       // is healthy and is NOT `ok` — `Response.ok` is 200–299 — so it is named
       // here: without it a correct revalidation would fall through and hand the
       // HTML page to a client that asked for markdown and already holds it.
