@@ -7,9 +7,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { talkId, loadTalks, TOOLS, callTool, talkSummary,
+import { talkId, loadTalks, TOOLS, callTool, talkSummary, decodeHeaderValue, dispatch,
          PROTOCOL_VERSION, SERVER_NAME, SERVER_VERSION } from './mcp.mts';
-import type { ToolResult, TalkSummary, TalkDetail } from './mcp.mts';
+import type { ToolResult, TalkSummary, TalkDetail, Env, RpcError } from './mcp.mts';
 
 /**
  * A protocol payload, as a test reads one.
@@ -152,4 +152,125 @@ test('an unknown tool name is a tool error naming the real tools', async () => {
   const result = await callTool('search_talks', {}, stubAssets());
   assert.equal(result.isError, true);
   assert.match(result.content[0].text, /list_talks/);
+});
+
+test('decodeHeaderValue passes plain ASCII through untouched', () => {
+  assert.equal(decodeHeaderValue('get_talk'), 'get_talk');
+  assert.equal(decodeHeaderValue('tools/call'), 'tools/call');
+});
+
+test('decodeHeaderValue decodes the base64 sentinel', () => {
+  assert.equal(decodeHeaderValue('=?base64?SGVsbG8sIOS4lueVjA==?='), 'Hello, 世界');
+});
+
+test('decodeHeaderValue refuses undecodable sentinel values', () => {
+  assert.equal(decodeHeaderValue('=?base64?not valid base64!?='), null,
+    'returning the raw string would let a broken header match the body by accident');
+});
+
+/**
+ * `dispatch` returns one arm of a union, so `const { result } = ...` is
+ * `Record<string, unknown> | undefined` and every read off it is an error.
+ * These assert which arm came back — and a wrong arm fails with the *other*
+ * arm's contents in the message, which is the thing you want to see when a test
+ * that expected a result got an error instead.
+ */
+const resultOf = async (message: unknown, env: Env): Promise<Payload> => {
+  const answer = await dispatch(message, env);
+  assert.ok(answer.result, `expected a result, got error ${JSON.stringify(answer.error)}`);
+  return answer.result;
+};
+
+const errorOf = async (message: unknown, env: Env): Promise<RpcError> => {
+  const answer = await dispatch(message, env);
+  assert.ok(answer.error, `expected an error, got result ${JSON.stringify(answer.result)}`);
+  return answer.error;
+};
+
+/** A well-formed request body for the modern revision. */
+const rpc = (method: string, params: Payload = {}): Payload => ({
+  jsonrpc: '2.0',
+  id: 1,
+  method,
+  params: {
+    ...params,
+    _meta: {
+      'io.modelcontextprotocol/protocolVersion': PROTOCOL_VERSION,
+      'io.modelcontextprotocol/clientCapabilities': {},
+    },
+  },
+});
+
+test('server/discover reports the version, capabilities and identity', async () => {
+  const result = await resultOf(rpc('server/discover'), stubAssets());
+  assert.equal(result.resultType, 'complete', 'every result must carry a resultType');
+  assert.deepEqual(result.supportedVersions, [PROTOCOL_VERSION]);
+  assert.deepEqual(result.capabilities, { tools: {} });
+  assert.deepEqual(result._meta['io.modelcontextprotocol/serverInfo'],
+    { name: SERVER_NAME, version: SERVER_VERSION });
+  assert.ok(result.instructions.length > 0);
+});
+
+test('tools/list returns exactly the two tools', async () => {
+  const result = await resultOf(rpc('tools/list'), stubAssets());
+  assert.equal(result.resultType, 'complete');
+  assert.deepEqual(result.tools.map((tool: Payload) => tool.name), ['list_talks', 'get_talk']);
+});
+
+test('tools/call runs the tool', async () => {
+  const result = await resultOf(
+    rpc('tools/call', { name: 'list_talks', arguments: {} }), stubAssets());
+  assert.equal(result.resultType, 'complete');
+  // The tool result is spread into the RPC result, so structuredContent is here.
+  assert.equal(result.structuredContent.talks.length, 3);
+});
+
+test('a missing protocolVersion in _meta is invalid params', async () => {
+  const error = await errorOf({
+    jsonrpc: '2.0', id: 1, method: 'tools/list',
+    params: { _meta: { 'io.modelcontextprotocol/clientCapabilities': {} } },
+  }, stubAssets());
+  assert.equal(error.code, -32602);
+});
+
+test('a missing clientCapabilities in _meta is invalid params', async () => {
+  const error = await errorOf({
+    jsonrpc: '2.0', id: 1, method: 'tools/list',
+    params: { _meta: { 'io.modelcontextprotocol/protocolVersion': PROTOCOL_VERSION } },
+  }, stubAssets());
+  assert.equal(error.code, -32602,
+    'clientCapabilities is required on every request in this revision, not optional');
+});
+
+test('an unsupported protocol version lists what is supported', async () => {
+  const message = rpc('tools/list');
+  message.params._meta['io.modelcontextprotocol/protocolVersion'] = '2025-06-18';
+  const error = await errorOf(message, stubAssets());
+  assert.equal(error.code, -32022);
+  assert.deepEqual((error.data as Payload).supported, [PROTOCOL_VERSION]);
+});
+
+test('an unknown method is method not found', async () => {
+  const error = await errorOf(rpc('prompts/list'), stubAssets());
+  assert.equal(error.code, -32601);
+});
+
+test('a legacy initialize is rejected as an unknown method, not honoured', async () => {
+  const error = await errorOf(rpc('initialize'), stubAssets());
+  assert.equal(error.code, -32601,
+    'this server implements 2026-07-28 only — there is no handshake to answer');
+});
+
+test('a non-2.0 jsonrpc field is an invalid request', async () => {
+  const message = rpc('tools/list');
+  message.jsonrpc = '1.0';
+  const error = await errorOf(message, stubAssets());
+  assert.equal(error.code, -32600);
+});
+
+test('a null id is an invalid request', async () => {
+  const message = rpc('tools/list');
+  message.id = null;
+  const error = await errorOf(message, stubAssets());
+  assert.equal(error.code, -32600, 'MCP forbids a null id, unlike base JSON-RPC');
 });

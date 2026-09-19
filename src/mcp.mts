@@ -235,3 +235,136 @@ export async function callTool(
   }
   return toolResult(talkDetail(talk));
 }
+const META_PROTOCOL_VERSION = 'io.modelcontextprotocol/protocolVersion';
+const META_CLIENT_CAPABILITIES = 'io.modelcontextprotocol/clientCapabilities';
+const META_SERVER_INFO = 'io.modelcontextprotocol/serverInfo';
+
+// JSON-RPC's own codes, then the two MCP codes this server can emit. The
+// -32020..-32099 sub-range belongs to the specification: a code invented in it
+// would collide with a future one, so only defined codes appear here.
+const INVALID_REQUEST = -32600;
+const METHOD_NOT_FOUND = -32601;
+const INVALID_PARAMS = -32602;
+const HEADER_MISMATCH = -32020;
+const UNSUPPORTED_PROTOCOL_VERSION = -32022;
+
+/** What every result carries, so a client can tell a final answer from a retry. */
+const COMPLETE = {
+  resultType: 'complete',
+  _meta: { [META_SERVER_INFO]: { name: SERVER_NAME, version: SERVER_VERSION } },
+};
+
+/**
+ * Decodes the `=?base64?...?=` sentinel the transport uses for header values
+ * that are not plain ASCII, or returns the value unchanged when it is plain.
+ *
+ * An undecodable sentinel returns null rather than the raw string. The caller
+ * compares this against the request body, and a value that cannot be decoded
+ * must never compare equal to anything — returning the raw text would let a
+ * malformed header satisfy the check it exists to enforce. An absent header is
+ * null for the same reason.
+ */
+export function decodeHeaderValue(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const match = /^=\?base64\?(.*)\?=$/s.exec(value);
+  if (!match) return value;
+  try {
+    const binary = atob(match[1]);
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+/** A JSON-RPC error object, as this server emits them. */
+export interface RpcError {
+  code: number;
+  message: string;
+  data?: unknown;
+}
+
+/** What dispatch answers with: exactly one of the two, never both. */
+export type Dispatched =
+  | { result: Record<string, unknown>; error?: undefined }
+  | { error: RpcError; result?: undefined };
+
+const errorResponse = (code: number, message: string, data?: unknown): Dispatched => ({
+  error: { code, message, ...(data === undefined ? {} : { data }) },
+});
+
+/**
+ * Answers one JSON-RPC message.
+ *
+ * Transport concerns — headers, status codes, CORS — belong to handleMcp; this
+ * function sees only the body, which is what makes every rule below testable
+ * without constructing an HTTP request.
+ *
+ * `message` is `unknown` because it is whatever JSON.parse returned: the checks
+ * below are what turn it into something with a shape, and typing it as a
+ * request up front would assume the very thing they verify.
+ */
+export async function dispatch(message: unknown, env: Env): Promise<Dispatched> {
+  if (message === null || typeof message !== 'object' || Array.isArray(message)) {
+    // Arrays land here too: this revision has no JSON-RPC batching, so a batch
+    // is not a request the server can partially honour.
+    return errorResponse(INVALID_REQUEST, 'Expected a single JSON-RPC 2.0 request object.');
+  }
+  // Past the guard above this is an object, but every member is still whatever
+  // arrived. Naming that once keeps each check below about the protocol rule it
+  // enforces rather than about re-proving the value has members at all.
+  const request = message as Record<string, unknown>;
+
+  if (request.jsonrpc !== '2.0') {
+    return errorResponse(INVALID_REQUEST, 'The jsonrpc field must be exactly "2.0".');
+  }
+  if (typeof request.method !== 'string') {
+    return errorResponse(INVALID_REQUEST, 'The method field must be a string.');
+  }
+  // MCP tightens base JSON-RPC here: an id may be a string or a number, never
+  // null. A notification has no id at all and never reaches this branch.
+  if ('id' in request && request.id === null) {
+    return errorResponse(INVALID_REQUEST, 'A request id must not be null.');
+  }
+
+  const params = (request.params ?? {}) as Record<string, unknown>;
+  const meta = (params._meta ?? {}) as Record<string, unknown>;
+  const version = meta[META_PROTOCOL_VERSION];
+  if (typeof version !== 'string') {
+    return errorResponse(INVALID_PARAMS,
+      `Every request must carry params._meta["${META_PROTOCOL_VERSION}"].`);
+  }
+  if (meta[META_CLIENT_CAPABILITIES] === undefined) {
+    return errorResponse(INVALID_PARAMS,
+      `Every request must carry params._meta["${META_CLIENT_CAPABILITIES}"].`);
+  }
+  if (version !== PROTOCOL_VERSION) {
+    return errorResponse(UNSUPPORTED_PROTOCOL_VERSION,
+      `This server implements MCP ${PROTOCOL_VERSION} only.`,
+      { supported: [PROTOCOL_VERSION] });
+  }
+
+  switch (request.method) {
+    case 'server/discover':
+      return {
+        result: {
+          ...COMPLETE,
+          supportedVersions: [PROTOCOL_VERSION],
+          capabilities: { tools: {} },
+          instructions: "Read-only access to Jared Burrows' conference talks. Call list_talks for the catalogue, then get_talk with an id for one talk in full.",
+        },
+      };
+    case 'tools/list':
+      return { result: { ...COMPLETE, tools: TOOLS } };
+    case 'tools/call': {
+      const name = params.name;
+      if (typeof name !== 'string') {
+        return errorResponse(INVALID_PARAMS, 'tools/call requires a string params.name.');
+      }
+      const args = (params.arguments ?? {}) as Record<string, unknown>;
+      return { result: { ...COMPLETE, ...(await callTool(name, args, env)) } };
+    }
+    default:
+      return errorResponse(METHOD_NOT_FOUND, `This server does not implement ${request.method}.`);
+  }
+}
