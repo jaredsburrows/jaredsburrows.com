@@ -1497,7 +1497,16 @@ Six invariants, all in the same file and reviewed together. These are what stop 
 
 - [ ] **Step 1: Write the failing regression test**
 
-Append to `.github/validate-site.test.js`, using the file's existing `testFiles(name, overrides, expectCode, expectStderrIncludes)` helper (defined around line 223). `overrides` maps a repo-relative path to its replacement content; `expectStderrIncludes` takes one substring or a list.
+Add these to `.github/validate-site.test.js`, using the file's existing `testFiles(name, overrides, expectCode, expectStderrIncludes)` helper (defined around line 223). `overrides` maps a repo-relative path to its replacement content; `expectStderrIncludes` takes one substring or a list.
+
+**Insert them *before* the summary block at the end of the file, not at the end.** The file closes with
+
+```js
+console.log(`\n${passed} passed, ${failed} failed`);
+process.exit(failed > 0 ? 1 : 0);
+```
+
+so anything appended after that never runs — the process has already exited. Appending looks like it works: the suite reports all green, because the new cases were skipped rather than passed. Verify by checking that the count goes **up** by 15, and that all 15 fail before the invariants exist.
 
 ```js
 // --- MCP server card invariants. The card is three copies of one document
@@ -1514,7 +1523,11 @@ const originalCard = fs.readFileSync(path.join(repoRoot, 'mcp/server-card'), 'ut
 const originalMcpSource = fs.readFileSync(path.join(repoRoot, 'src/mcp.mts'), 'utf8');
 const originalRedirects = fs.readFileSync(path.join(repoRoot, '_redirects'), 'utf8');
 
-/** The same mutated card written to all three paths, so byte equality still holds. */
+/**
+ * The same mutated card written to all three paths, so byte equality still holds.
+ * @param {(card: any) => void} transform
+ * @returns {Record<string, string>}
+ */
 const allCards = (transform) => {
   const card = JSON.parse(originalCard);
   transform(card);
@@ -1585,7 +1598,7 @@ testFiles('a _redirects rule shadowing /mcp fails the build',
 testFiles('a manifest entry with the wrong media type fails the build',
   (() => {
     const manifest = JSON.parse(fs.readFileSync(path.join(repoRoot, '.well-known/ard.json'), 'utf8'));
-    const entry = manifest.entries.find((candidate) => candidate.identifier.includes(':mcp:'));
+    const entry = manifest.entries.find((/** @type {{ identifier: string }} */ candidate) => candidate.identifier.includes(':mcp:'));
     entry.type = 'application/json';
     const text = `${JSON.stringify(manifest, null, 2)}\n`;
     return { '.well-known/ard.json': text, '.well-known/ai-catalog.json': text };
@@ -1625,7 +1638,7 @@ for (const name of CARD_PATHS) {
   try {
     cardText.set(name, read(name));
   } catch (error) {
-    bad(`${name} is missing — the server card is published at all three paths (${error.message})`);
+    bad(`${name} is missing — the server card is published at all three paths (${messageOf(error)})`);
   }
 }
 
@@ -1648,10 +1661,11 @@ const mcpSource = (() => {
   try {
     return read('src/mcp.mts');
   } catch (error) {
-    bad(`src/mcp.mts is missing, but the server card advertises it (${error.message})`);
+    bad(`src/mcp.mts is missing, but the server card advertises it (${messageOf(error)})`);
     return '';
   }
 })();
+/** @param {string} name @returns {string | undefined} */
 const constantIn = (name) => new RegExp(`export const ${name} = '([^']+)'`).exec(mcpSource)?.[1];
 const serverVersion = constantIn('SERVER_VERSION');
 const serverName = constantIn('SERVER_NAME');
@@ -1730,7 +1744,7 @@ for (const name of CARD_PATHS) {
 // skips the entry entirely, and the card may as well not be published.
 for (const name of ARD_PATHS) {
   const manifest = ardText.has(name) ? parseJson(name) : undefined;
-  const entry = manifest?.entries?.find((candidate) => candidate.identifier === MCP_CATALOG_ID);
+  const entry = manifest?.entries?.find((/** @type {{ identifier?: string }} */ candidate) => candidate.identifier === MCP_CATALOG_ID);
   if (!entry) {
     bad(`${name} has no ${MCP_CATALOG_ID} entry, so nothing points a client at the server card`);
     continue;
@@ -1803,7 +1817,14 @@ git ls-files '*.html' | xargs java -jar node_modules/vnu-jar/build/dist/vnu.jar
 
 Expected: all green. This is exactly what CI runs, in CI's order.
 
-`npm run typecheck` is the step most likely to fail first here, and it covers more than `src/`: `tsconfig.json` includes `.github/**/*.js` with `checkJs` and `strict`, so the validator code added in Step 3 is type-checked as well as executed. A `bad(...)` call is fine; an unguarded `card.remotes[0].url` on a `JSON.parse` result may not be.
+`npm run typecheck` is the step most likely to fail first here, and it covers more than `src/`: `tsconfig.json` includes `.github/**/*.js` with `checkJs` and `strict`, so the validator code added in Step 3 is type-checked as well as executed.
+
+Two patterns account for every error this produced in practice, and both are already solved in the file — use the existing solutions rather than inventing new ones:
+
+- **`catch (error)` binds `unknown`**, so `error.message` is an error. The file has `messageOf(error)` at the top for exactly this (line 53), with a comment explaining why.
+- **An un-annotated callback parameter is an implicit `any`.** These are `.js` files, so the annotation is JSDoc, not TypeScript syntax: `/** @param {string} name */` above the function, or an inline `(/** @type {{ identifier: string }} */ candidate) =>` for a callback.
+
+Run it before committing, not after. The validator suite passes with both mistakes in place — `tsc` is the only thing that catches them.
 
 - [ ] **Step 7: Commit**
 
