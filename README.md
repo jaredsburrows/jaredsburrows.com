@@ -6,7 +6,7 @@ My blog, presentations, GitHub, and social links.
 [![Build](https://github.com/jaredsburrows/jaredsburrows.com/workflows/build/badge.svg)](https://github.com/jaredsburrows/jaredsburrows.com/actions)
 [![Twitter Follow](https://img.shields.io/twitter/follow/jaredsburrows.svg?style=social)](https://twitter.com/jaredsburrows)
 
-Personal website — no build step. Cloudflare Workers serves the repo as-is from its edge; one route, `/`, also runs `src/worker.mts` (see "The Worker").
+Personal website — no build step. Cloudflare Workers serves the repo as-is from its edge; two routes, `/` and `/mcp`, also run `src/worker.mts` (see "The Worker").
 
 ### Preview the website
 
@@ -65,9 +65,36 @@ stops matching the meta description, or if the talks stop matching
 `static/js/talks.js` in either direction. `<link rel="alternate"
 type="text/markdown">` in the head points at it.
 
+### MCP server
+
+`POST /mcp` is a Model Context Protocol server over the talks, implementing
+protocol revision `2026-07-28` and only that revision. It exposes two tools,
+`list_talks` and `get_talk`, and keeps no session — every request carries its
+own protocol version and client capabilities in `params._meta`, mirrored into
+the `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` headers, which the
+server checks against the body. Clients speaking the older handshake-based
+revisions get an `UnsupportedProtocolVersion` error rather than a second code
+path to maintain.
+
+Two talks share the title "The Road to Single Dex", so talks are keyed by
+`{date}-{slug}` — `2017-06-22-the-road-to-single-dex` — not by title.
+
+Its server card is published three times from one source: `mcp/server-card` is
+the location [SEP-2127](https://modelcontextprotocol.io/seps/2127-mcp-server-cards)
+reserves, and `.well-known/mcp/server-card.json` and `.well-known/mcp.json` are
+the paths today's scanners probe. Edit `mcp/server-card` and copy it to both;
+`validate-site.js` fails the build if the three ever differ, if the card's
+endpoint stops matching the Worker, or if its tool list stops matching
+`src/mcp.mts`. `/.well-known/ard.json` carries the entry that points a client
+at the card, which is the discovery path SEP-2127 specifies.
+
+```
+node --test src/mcp.test.mts
+```
+
 ### The Worker
 
-`src/worker.mts` is the only server code on this site. `_headers` and
+`src/worker.mts` is the server code on this site. `_headers` and
 `_redirects` cannot branch on a request header, so the Markdown negotiation on
 `/` is a Worker: when the request names `text/markdown` in `Accept` — exactly,
 with a non-zero q, and at least as preferred as `text/html` — it returns
@@ -81,10 +108,12 @@ that already holds the Markdown homepage gets a 304 rather than the document
 again. The two carry different ETags, so neither one's validator can ever
 produce a 304 for the other.
 
-`assets.run_worker_first: ["/"]` in `wrangler.jsonc` scopes it to `/`, and
-`assets.binding` is what gives it `env.ASSETS.fetch`. Every other path is
-matched by Cloudflare's asset router before any code runs, so those requests
-are neither slowed down nor billed as Worker invocations.
+`assets.run_worker_first: ["/", "/mcp"]` in `wrangler.jsonc` scopes it to those
+two paths, and `assets.binding` is what gives it `env.ASSETS.fetch`. Both are
+exact matches, so `/mcp` does not capture `/mcp/server-card` — the card stays a
+static asset. Every other path is matched by Cloudflare's asset router before
+any code runs, so those requests are neither slowed down nor billed as Worker
+invocations.
 
 `/` must never be given a cache TTL. It has two representations on one URL, and
 Cloudflare's cache keys only on the URL and `Accept-Encoding` — it ignores

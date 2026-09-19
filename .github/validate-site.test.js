@@ -1074,5 +1074,102 @@ testFiles('an llms.txt link inside a fenced block is not a reference', {
   'llms.txt': `${originalLlmsTxt}\n\`\`\`\n- [Example](/api/example.json): how an entry looks.\n\`\`\`\n`,
 }, 0);
 
+// --- MCP server card invariants. The card is three copies of one document
+// advertising a server in another file, reached through a manifest entry in a
+// fourth. Nothing at runtime notices when any of those stop agreeing: an agent
+// reading a stale card connects to the wrong endpoint, or calls a tool that no
+// longer exists. Every case below mutates one file and expects a non-zero exit.
+const CARD_PATHS = [
+  'mcp/server-card',
+  '.well-known/mcp/server-card.json',
+  '.well-known/mcp.json',
+];
+const originalCard = fs.readFileSync(path.join(repoRoot, 'mcp/server-card'), 'utf8');
+const originalMcpSource = fs.readFileSync(path.join(repoRoot, 'src/mcp.mts'), 'utf8');
+const originalRedirects = fs.readFileSync(path.join(repoRoot, '_redirects'), 'utf8');
+
+/**
+ * The same mutated card written to all three paths, so byte equality still holds.
+ * @param {(card: any) => void} transform
+ * @returns {Record<string, string>}
+ */
+const allCards = (transform) => {
+  const card = JSON.parse(originalCard);
+  transform(card);
+  const text = `${JSON.stringify(card, null, 2)}\n`;
+  return Object.fromEntries(CARD_PATHS.map((name) => [name, text]));
+};
+
+testFiles('a card copy that drifts from the canonical one fails the build',
+  { '.well-known/mcp.json': originalCard.replace('"1.0.0"', '"9.9.9"') },
+  1, 'byte-identical');
+
+testFiles('a missing card copy fails the build',
+  { '.well-known/mcp.json': null },
+  1, '.well-known/mcp.json is missing');
+
+testFiles('an endpoint that disagrees with remotes[0].url fails the build',
+  allCards((card) => { card.endpoint = 'https://jaredsburrows.com/mcp-v2'; }),
+  1, 'disagrees with remotes[0].url');
+
+testFiles('a remotes url that is not the route the Worker serves fails the build',
+  allCards((card) => { card.remotes[0].url = 'https://jaredsburrows.com/api/mcp'; }),
+  1, 'but the Worker serves');
+
+testFiles('a card advertising a tool the server does not export fails the build',
+  allCards((card) => { card.capabilities.tools = ['list_talks', 'get_talk', 'search_talks']; }),
+  1, '"search_talks" that src/mcp.mts does not export');
+
+testFiles('a card that drops a tool the server exports fails the build',
+  allCards((card) => { card.capabilities.tools = ['list_talks']; }),
+  1, 'does not advertise');
+
+testFiles('a card version that disagrees with SERVER_VERSION fails the build',
+  allCards((card) => { card.version = '2.0.0'; card.serverInfo.version = '2.0.0'; }),
+  1, 'disagrees with SERVER_VERSION');
+
+testFiles('a card claiming a protocol revision the server does not implement fails the build',
+  allCards((card) => { card.remotes[0].supportedProtocolVersions = ['2025-06-18']; }),
+  1, 'the only revision src/mcp.mts implements');
+
+testFiles('a wrong $schema fails the build',
+  allCards((card) => { card.$schema = 'https://example.invalid/card.json'; }),
+  1, 'SEP-2127 schema pins it to');
+
+testFiles('a name that is not reverse-DNS with one slash fails the build',
+  allCards((card) => { card.name = 'talks'; card.serverInfo.name = 'talks'; }),
+  1, 'reverse-DNS with exactly one slash');
+
+testFiles('renaming a tool in the server without updating the card fails the build',
+  { 'src/mcp.mts': originalMcpSource.replace("name: 'get_talk',", "name: 'fetch_talk',") },
+  1, 'does not advertise');
+
+testFiles('dropping the Content-Type rule on the extensionless card fails the build',
+  { '_headers': originalHeaders.replace(
+      '/mcp/server-card\n  Content-Type: application/mcp-server-card+json\n',
+      '/mcp/server-card\n') },
+  1, 'Content-Type: application/mcp-server-card+json on /mcp/server-card');
+
+testFiles('dropping CORS from a card path fails the build',
+  { '_headers': originalHeaders.replace(
+      '/.well-known/mcp.json\n  Content-Type: application/mcp-server-card+json\n  Access-Control-Allow-Origin: *',
+      '/.well-known/mcp.json\n  Content-Type: application/mcp-server-card+json') },
+  1, 'Access-Control-Allow-Origin');
+
+testFiles('a _redirects rule shadowing /mcp fails the build',
+  { '_redirects': `${originalRedirects}/mcp /api/talks.json 302\n` },
+  1, 'would shadow the MCP endpoint');
+
+testFiles('a manifest entry with the wrong media type fails the build',
+  (() => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(repoRoot, '.well-known/ard.json'), 'utf8'));
+    const entry = manifest.entries.find((/** @type {{ identifier: string }} */ candidate) => candidate.identifier.includes(':mcp:'));
+    entry.type = 'application/json';
+    const text = `${JSON.stringify(manifest, null, 2)}\n`;
+    return { '.well-known/ard.json': text, '.well-known/ai-catalog.json': text };
+  })(),
+  1, 'application/mcp-server-card+json');
+
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);
