@@ -79,3 +79,159 @@ export async function loadTalks(env: Env): Promise<Talk[]> {
   const data = (await response.json()) as { talks?: Talk[] };
   return Array.isArray(data.talks) ? data.talks : [];
 }
+/**
+ * What a tool returns about a talk.
+ *
+ * Optional members are optional on purpose and never null: a talk with no video
+ * omits `video` entirely, so a consumer tests presence rather than emptiness.
+ * `link` is optional in `Talk` too, so it is optional here.
+ */
+export interface TalkSummary {
+  id: string;
+  date: string;
+  title: string;
+  where: string;
+  location?: string;
+  link?: string;
+  /** Speaker Deck player URL, built from the id. */
+  slides?: string;
+  /** YouTube watch URL, built from the id. */
+  video?: string;
+}
+
+/** A summary plus the abstract paragraphs; what `get_talk` returns. */
+export interface TalkDetail extends TalkSummary {
+  description: string[];
+}
+
+/**
+ * The compact form of a talk: everything but the abstract.
+ *
+ * Links are rebuilt in the same shape static/js/home.js and index.md use, so an
+ * agent and a reader following the site get the identical URL. Absent ids are
+ * omitted rather than set to null — an agent should not have to distinguish
+ * "no video" from "video: null".
+ */
+export function talkSummary(talk: Talk): TalkSummary {
+  return {
+    id: talkId(talk),
+    date: talk.date,
+    title: talk.title,
+    where: talk.where,
+    location: talk.location,
+    ...(talk.link ? { link: talk.link } : {}),
+    ...(talk.speakerdeck ? { slides: `https://speakerdeck.com/player/${talk.speakerdeck}` } : {}),
+    ...(talk.youtube ? { video: `https://www.youtube.com/watch?v=${talk.youtube}` } : {}),
+  };
+}
+
+/** The full form: the summary plus the abstract paragraphs. */
+export function talkDetail(talk: Talk): TalkDetail {
+  return { ...talkSummary(talk), description: talk.description ?? [] };
+}
+
+/**
+ * The tools this server exposes, and the list the card must agree with.
+ *
+ * Two, not three. A `search_talks` over three records is `list_talks` plus a
+ * filter the caller already has, and this site's whole agent-readiness effort
+ * has treated duplication as a cost rather than a feature.
+ *
+ * `additionalProperties: false` on both schemas is deliberate: a typo'd
+ * argument should be refused loudly, not silently ignored on a surface whose
+ * only callers are machines.
+ */
+export const TOOLS = [
+  {
+    name: 'list_talks',
+    description: "List Jared Burrows' conference talks, newest first. Returns each talk's id, date, title, venue, location and links; call get_talk for the abstract.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        year: { type: 'integer', description: 'Only talks given in this calendar year.' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'get_talk',
+    description: 'Get one talk in full, including its abstract, by the id that list_talks returns.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'A talk id, for example 2017-11-08-the-road-to-single-dex.' },
+      },
+      required: ['id'],
+      additionalProperties: false,
+    },
+  },
+];
+
+/** What a tool call hands back, in the shape MCP defines for a tool result. */
+export interface ToolResult {
+  content: { type: 'text'; text: string }[];
+  structuredContent: Record<string, unknown>;
+  isError?: boolean;
+}
+
+/**
+ * A tool result. `content` is what a model reads; `structuredContent` is the
+ * same answer as data for a client that would rather parse than scrape.
+ */
+const toolResult = (structured: object): ToolResult => ({
+  content: [{ type: 'text', text: JSON.stringify(structured, null, 2) }],
+  // An interface has no index signature, so `TalkDetail` is not assignable to
+  // `Record<string, unknown>` without this. The cast is here, once, rather than
+  // at each call site — and `object` above still refuses a string or a number.
+  structuredContent: structured as Record<string, unknown>,
+});
+
+/**
+ * A failure of the *answer*, not of the call.
+ *
+ * An unknown id is not a malformed request — it is a well-formed question with
+ * the answer "there is no such talk", so it comes back as a tool result with
+ * `isError`, not as a JSON-RPC error. Confusing the two teaches a client to
+ * retry a request that will never succeed.
+ */
+const toolError = (message: string): ToolResult => ({
+  content: [{ type: 'text', text: message }],
+  structuredContent: { error: message },
+  isError: true,
+});
+
+/**
+ * Runs one tool.
+ *
+ * `args` is `unknown`-ish on purpose: it arrives straight off the wire, and the
+ * narrowing below is the only thing standing between a hostile body and the
+ * dataset. Typing it as the tool's declared schema would be a lie about what
+ * was actually received.
+ */
+export async function callTool(
+  name: string,
+  args: Record<string, unknown>,
+  env: Env,
+): Promise<ToolResult> {
+  const known = TOOLS.map((tool) => tool.name);
+  if (!known.includes(name)) {
+    return toolError(`No tool named ${JSON.stringify(name)}. This server exposes: ${known.join(', ')}.`);
+  }
+
+  const talks = await loadTalks(env);
+
+  if (name === 'list_talks') {
+    const year = args.year;
+    const matching = year === undefined
+      ? talks
+      : talks.filter((talk) => Number(talk.date.slice(0, 4)) === Number(year));
+    return toolResult({ talks: matching.map(talkSummary) });
+  }
+
+  const wanted = String(args.id ?? '');
+  const talk = talks.find((candidate) => talkId(candidate) === wanted);
+  if (!talk) {
+    return toolError(`No talk with id ${JSON.stringify(wanted)}. Valid ids: ${talks.map(talkId).join(', ')}.`);
+  }
+  return toolResult(talkDetail(talk));
+}

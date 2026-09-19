@@ -7,7 +7,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { talkId, loadTalks, PROTOCOL_VERSION, SERVER_NAME, SERVER_VERSION } from './mcp.mts';
+import { talkId, loadTalks, TOOLS, callTool, talkSummary,
+         PROTOCOL_VERSION, SERVER_NAME, SERVER_VERSION } from './mcp.mts';
+import type { ToolResult, TalkSummary, TalkDetail } from './mcp.mts';
 
 /**
  * A protocol payload, as a test reads one.
@@ -74,4 +76,80 @@ test('loadTalks returns the talks array from the asset', async () => {
   const talks = await loadTalks(stubAssets());
   assert.equal(talks.length, 3);
   assert.equal(talks[0].title, 'The Road to Single Dex');
+});
+
+// `structuredContent` is typed Record<string, unknown> — the honest type for a
+// payload whose shape depends on which tool ran — so reading a member off it is
+// a type error until something narrows it. These two say which tool's answer a
+// given assertion expects, and a wrong guess fails the type check rather than
+// the assertion, which is the earlier and clearer failure.
+// `as unknown as` is required for the second: TypeScript refuses a direct cast
+// from Record<string, unknown> to an interface it shares no members with.
+const listed = (result: ToolResult) => result.structuredContent as { talks: TalkSummary[] };
+const detailed = (result: ToolResult) => result.structuredContent as unknown as TalkDetail;
+
+test('exactly two tools are exposed, and both are well-formed', () => {
+  assert.deepEqual(TOOLS.map((tool) => tool.name), ['list_talks', 'get_talk']);
+  for (const tool of TOOLS) {
+    assert.ok(tool.description.length > 0, `${tool.name} needs a description`);
+    assert.equal(tool.inputSchema.type, 'object');
+    assert.equal(tool.inputSchema.additionalProperties, false,
+      `${tool.name} must reject unknown arguments rather than ignore them`);
+  }
+  assert.deepEqual(TOOLS[1].inputSchema.required, ['id']);
+});
+
+test('talkSummary carries the links in the same shape the site uses', () => {
+  const summary = talkSummary(TALKS[1]);
+  assert.equal(summary.id, '2017-11-05-make-your-build-great-again');
+  assert.equal(summary.slides, 'https://speakerdeck.com/player/4206b3835eb141ba84cb91cb95cef7f6');
+  assert.equal(summary.video, 'https://www.youtube.com/watch?v=rvwAlbtbtmM');
+  assert.equal('description' in summary, false, 'the summary is the compact form');
+});
+
+test('talkSummary omits links a talk does not have', () => {
+  const summary = talkSummary(TALKS[0]);
+  assert.equal('video' in summary, false, 'the GDG talk has no youtube id — omit, never null');
+});
+
+test('list_talks returns every talk, newest first', async () => {
+  const result = await callTool('list_talks', {}, stubAssets());
+  assert.equal(result.isError, undefined);
+  assert.equal(listed(result).talks.length, 3);
+  assert.equal(listed(result).talks[0].date, '2017-11-08');
+});
+
+test('list_talks filters by year', async () => {
+  const result = await callTool('list_talks', { year: 2016 }, stubAssets());
+  assert.deepEqual(listed(result).talks, []);
+  const all = await callTool('list_talks', { year: 2017 }, stubAssets());
+  assert.equal(listed(all).talks.length, 3);
+});
+
+test('get_talk returns the full record including the abstract', async () => {
+  const result = await callTool('get_talk',
+    { id: '2017-06-22-the-road-to-single-dex' }, stubAssets());
+  assert.equal(result.isError, undefined);
+  assert.equal(detailed(result).where, 'Gradle Summit');
+  assert.deepEqual(detailed(result).description, ['Four.']);
+});
+
+test('get_talk distinguishes the two talks that share a title', async () => {
+  const sf = await callTool('get_talk', { id: '2017-11-08-the-road-to-single-dex' }, stubAssets());
+  const summit = await callTool('get_talk', { id: '2017-06-22-the-road-to-single-dex' }, stubAssets());
+  assert.equal(detailed(sf).where, 'GDG SF Meetup');
+  assert.equal(detailed(summit).where, 'Gradle Summit');
+});
+
+test('get_talk with an unknown id is a tool error, not a protocol error', async () => {
+  const result = await callTool('get_talk', { id: 'nope' }, stubAssets());
+  assert.equal(result.isError, true, 'the call was well-formed; the answer is "no such talk"');
+  assert.match(result.content[0].text, /2017-11-08-the-road-to-single-dex/,
+    'an unknown id should list the valid ones rather than just refusing');
+});
+
+test('an unknown tool name is a tool error naming the real tools', async () => {
+  const result = await callTool('search_talks', {}, stubAssets());
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /list_talks/);
 });
