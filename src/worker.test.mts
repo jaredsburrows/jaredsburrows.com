@@ -346,7 +346,7 @@ test('the HTML branch keeps the cache headers the asset router gave it', async (
 
   // Nothing is pinned here: this response is / answering as itself, so its
   // Cache-Control arrives from the asset router and _headers, and a TTL wrongly
-  // added there is validate-site.js's half of the same invariant.
+  // added there is validate-site.ts's half of the same invariant.
   assert.equal(response.headers.get('cache-control'), UNCACHEABLE);
 });
 test('/mcp is handed to the MCP server, not the asset router', async () => {

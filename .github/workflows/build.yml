@@ -74,13 +74,14 @@ jobs:
       - name: Validate HTML
         run: git ls-files '*.html' | xargs java -jar node_modules/vnu-jar/build/dist/vnu.jar
 
-      # Type checking, not compiling: every config is noEmit and every file
-      # stays the .js/.mjs the browser and Node already run. Three configs
-      # because each has a different set of globals -- browser scripts, Node
-      # scripts, and the jsdom test that needs both -- see the comments in
-      # each. Types live in JSDoc, so the cost lands as comments in
-      # static/js/home.js, which ships unminified: +453 bytes gzipped. The
-      # Node-side files are never served and cost nothing.
+      # Type checking, not compiling: every config is noEmit, and Node runs the
+      # .ts/.mts files below by stripping types in place -- no build step, no
+      # emitted file. Three configs because each has a different set of globals:
+      # Node scripts, browser scripts, and the jsdom test that needs both. See
+      # the comments in each. Only static/js/ is still JavaScript, and its types
+      # live in JSDoc, which ships as comments because that file is unminified:
+      # +453 bytes gzipped. Everything else here is never served and costs
+      # nothing.
       - name: Type check
         run: npm run typecheck
 
@@ -88,13 +89,13 @@ jobs:
         run: for f in static/js/*.js; do node --check "$f"; done
 
       - name: Validate talks data
-        run: node .github/validate-talks.js
+        run: node .github/validate-talks.ts
 
       - name: Validate site invariants
-        run: node .github/validate-site.js
+        run: node .github/validate-site.ts
 
       - name: Test site invariant validator
-        run: node .github/validate-site.test.js
+        run: node .github/validate-site.test.ts
 
       # The talk embeds are cross-origin iframes built lazily in JS, and a
       # referrerpolicy they do not carry costs every visitor the videos
@@ -102,7 +103,7 @@ jobs:
       # regex could not follow, so this one mounts the page, opens the
       # accordion and reads the iframes that are really there.
       - name: Test the talk embeds
-        run: node --test .github/embed-referrerpolicy.test.mjs
+        run: node --test .github/embed-referrerpolicy.test.mts
 
       # The Worker decides whether / is HTML or Markdown, and getting that wrong
       # in the browser direction would serve a page with no HTML in it to every

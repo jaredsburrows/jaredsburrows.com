@@ -83,7 +83,7 @@ Its server card is published three times from one source: `mcp/server-card` is
 the location [SEP-2127](https://modelcontextprotocol.io/seps/2127-mcp-server-cards)
 reserves, and `.well-known/mcp/server-card.json` and `.well-known/mcp.json` are
 the paths today's scanners probe. Edit `mcp/server-card` and copy it to both;
-`validate-site.js` fails the build if the three ever differ, if the card's
+`validate-site.ts` fails the build if the three ever differ, if the card's
 endpoint stops matching the Worker, or if its tool list stops matching
 `src/mcp.mts`. `/.well-known/ard.json` carries the entry that points a client
 at the card, which is the discovery path SEP-2127 specifies.
@@ -127,7 +127,7 @@ Two things hold that down, because there are two ways in. The Worker pins
 `Cache-Control: public, max-age=0, must-revalidate` on the Markdown response:
 that response is `/index.md`'s headers republished under `/`, so without the pin
 a TTL on `/index.md` in `_headers` — which looks exactly as reasonable as the
-one on `/static/js/*` — would land on `/`. And `validate-site.js` fails the
+one on `/static/js/*` — would land on `/`. And `validate-site.ts` fails the
 build on any `Cache-Control`, `CDN-Cache-Control`, `Cloudflare-CDN-Cache-Control`
 or `Expires` that gives `/` itself a TTL — `max-age`, `s-maxage`,
 `stale-while-revalidate` or `stale-if-error`, in `/`'s own rule or any glob that

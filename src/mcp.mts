@@ -5,7 +5,7 @@
 // deliberate narrowing, not an omission: clients speaking the handshake-based
 // revisions (2025-11-25 and earlier) get a correct UnsupportedProtocolVersion
 // error rather than a second code path to maintain. The card says the same
-// thing in `supportedProtocolVersions`, and validate-site.js pins the two
+// thing in `supportedProtocolVersions`, and validate-site.ts pins the two
 // together so the claim cannot drift from the code.
 //
 // This revision is stateless by design: no `initialize` handshake, no sessions,
@@ -27,7 +27,7 @@ export const PROTOCOL_VERSION = '2026-07-28';
 /** Reverse-DNS server name, one slash, as the SEP-2127 card schema requires. */
 export const SERVER_NAME = 'jaredsburrows.com/talks';
 
-/** Card and server report the same version; validate-site.js checks that. */
+/** Card and server report the same version; validate-site.ts checks that. */
 export const SERVER_VERSION = '1.0.0';
 
 /** The dataset, read through the asset binding so there is only ever one copy. */
@@ -67,14 +67,14 @@ export interface Env {
  * The talks, read from the asset router rather than duplicated here.
  *
  * api/talks.json is already the copy the REST API serves and is already pinned
- * to static/js/talks.js by validate-site.js. Reading it means the MCP server
+ * to static/js/talks.js by validate-site.ts. Reading it means the MCP server
  * cannot disagree with the homepage about what talks exist.
  */
 export async function loadTalks(env: Env): Promise<Talk[]> {
   const response = await env.ASSETS.fetch(new URL(TALKS_ASSET, 'https://jaredsburrows.com'));
   if (!response.ok) throw new Error(`${TALKS_ASSET} is unavailable (${response.status})`);
   // `json()` is typed `Promise<unknown>`, so the shape is asserted once, here,
-  // rather than re-asserted at every use. validate-talks.js is what actually
+  // rather than re-asserted at every use. validate-talks.ts is what actually
   // holds api/talks.json to this shape at CI time.
   const data = (await response.json()) as { talks?: Talk[] };
   return Array.isArray(data.talks) ? data.talks : [];

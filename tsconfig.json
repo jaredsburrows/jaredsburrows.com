@@ -10,15 +10,18 @@
   "compilerOptions": {
     "noEmit": true,
 
-    // The sources stay .js/.mjs. checkJs is what makes JSDoc load-bearing
-    // instead of decorative -- src/worker.mts is already annotated for this.
+    // Nothing in this program is JavaScript any more -- src/ is .mts and
+    // .github/ is .ts. These stay as a safety net: without them a .js file
+    // added here later would be skipped silently rather than checked. They are
+    // load-bearing in tsconfig.browser.json, where static/js/*.js really is JS.
     "allowJs": true,
     "checkJs": true,
 
     "strict": true,
 
     // Matches package.json "type": "commonjs", so TS reads each file's module
-    // kind exactly the way Node does: .js is CommonJS, .mjs is ESM.
+    // kind exactly the way Node does: .ts is CommonJS (which is why the
+    // validators keep their `require` calls), .mts is ESM.
     "module": "nodenext",
     "moduleResolution": "nodenext",
 
@@ -37,5 +40,5 @@
 
     "skipLibCheck": true
   },
-  "include": ["src/**/*", ".github/**/*.js", "types/talks.d.ts"]
+  "include": ["src/**/*", ".github/**/*.ts", "types/talks.d.ts"]
 }

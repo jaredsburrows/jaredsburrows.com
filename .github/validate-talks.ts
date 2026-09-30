@@ -3,23 +3,29 @@
 // the newest-first sort compares date strings and Intl formats them, so dates
 // must be real zero-padded YYYY-MM-DD; embed ids must look right; key typos
 // and copy-paste leftovers are rejected. node --check only catches syntax.
-// Usage: node .github/validate-talks.js [path/to/talks.js]
+// Usage: node .github/validate-talks.ts [path/to/talks.js]
 'use strict';
 
-const path = require('path');
+// Node's built-ins are required, not imported: these files are CommonJS and stay
+// that way (package.json pins "type": "commonjs"). The `typeof import(...)`
+// annotations are types, not imports -- they erase completely, so the runtime is
+// the same `require` it has always been. They are needed because TypeScript
+// resolves a bare `require()` to `any` in a .ts file, where it special-cased and
+// typed it in .js: without them `fs.readFileSync` returns `any` and every string
+// derived from a file silently stops being checked.
+const path: typeof import('path') = require('path');
 
 const file = path.resolve(process.argv[2] ?? path.join(__dirname, '..', 'static', 'js', 'talks.js'));
-/** @type {string[]} */
-const errors = [];
+const errors: string[] = [];
 
 // talks.js is a classic browser script that assigns to `window`, so loading it
 // under Node means giving it one. The cast is how you say that to the checker:
 // `window` is not a Node global and is not supposed to be.
-/** @type {any} */ (global).window = {};
+(global as any).window = {};
 try {
   require(file);
 } catch (error) {
-  console.error(`✗ ${file} failed to load: ${/** @type {Error} */ (error).message}`);
+  console.error(`✗ ${file} failed to load: ${(error as Error).message}`);
   process.exit(1);
 }
 
@@ -27,8 +33,7 @@ try {
 // checking data that has not been validated yet, so a type asserting the shape
 // would assert away the very thing under test. types/talks.d.ts describes what
 // a *valid* entry looks like; this is what proves one is.
-/** @type {any[]} */
-const talks = /** @type {any} */ (global).window.TALKS;
+const talks: any[] = (global as any).window.TALKS;
 if (!Array.isArray(talks) || talks.length === 0) {
   console.error('✗ talks.js must set window.TALKS to a non-empty array');
   process.exit(1);
@@ -36,13 +41,11 @@ if (!Array.isArray(talks) || talks.length === 0) {
 
 const KNOWN_KEYS = new Set(['date', 'title', 'where', 'location', 'link', 'speakerdeck', 'youtube', 'description']);
 const seenEmbeds = new Map();
-/** @param {unknown} value */
-const isFilled = (value) => typeof value === 'string' && value.trim() !== '';
+const isFilled = (value: unknown) => typeof value === 'string' && value.trim() !== '';
 
 talks.forEach((talk, index) => {
   const name = isFilled(talk.title) ? `"${talk.title}"` : `entry ${index + 1}`;
-  /** @param {string} message */
-  const bad = (message) => errors.push(`${name}: ${message}`);
+  const bad = (message: string) => errors.push(`${name}: ${message}`);
 
   for (const key of Object.keys(talk)) {
     if (!KNOWN_KEYS.has(key)) bad(`unknown key "${key}" (typo?)`);
