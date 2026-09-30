@@ -39,6 +39,11 @@
         "read Jared Burrows' homepage as markdown",
         "where else does Jared Burrows publish"
       ]
+    },
+    {
+      "identifier": "urn:air:jaredsburrows.com:mcp:talks",
+      "type": "application/mcp-server-card+json",
+      "url": "https://jaredsburrows.com/mcp/server-card"
     }
   ]
 }

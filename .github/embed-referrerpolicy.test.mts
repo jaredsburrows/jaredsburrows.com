@@ -5,7 +5,7 @@
 // a referer, and a document Referrer-Policy of same-origin sends none
 // cross-origin — a Cloudflare zone rule applied exactly that for a month
 // (B1/B2), so the frames pin the policy themselves. Three rounds of regex
-// hardening in validate-site.js tried to assert that from home.js's source
+// hardening in validate-site.ts tried to assert that from home.js's source
 // text and lost eleven times (B3, B4, B5, B7-B12, S23-S26): every defeat was a
 // data-flow or reachability question — a decoy element, a call after `return`,
 // an early conditional return, a reassigned local, a later

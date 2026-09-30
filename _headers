@@ -75,3 +75,27 @@
 
 /.well-known/ard.json
   Access-Control-Allow-Origin: *
+
+# MCP server card, published at three paths. /mcp/server-card is the location
+# SEP-2127 reserves (<streamable-http-url>/server-card); the two .well-known
+# copies are what today's scanners probe, and SEP-2127 explicitly declined to
+# put the card there. Byte-identical, with validate-site.js keeping them so.
+#
+# The canonical path has no extension, so Cloudflare infers no type at all —
+# measured under `wrangler dev`, the response arrives with no Content-Type
+# whatsoever. That makes this rule load-bearing rather than cosmetic, and it
+# fails open (no type) rather than closed. Access-Control-Allow-Origin is a
+# MUST for hosted card endpoints, so browser agents can read them cross-origin.
+# Exact paths, no globs: /* also matches these, so these rules may only add
+# headers /* does not already set, or the two values would comma-join.
+/mcp/server-card
+  Content-Type: application/mcp-server-card+json
+  Access-Control-Allow-Origin: *
+
+/.well-known/mcp/server-card.json
+  Content-Type: application/mcp-server-card+json
+  Access-Control-Allow-Origin: *
+
+/.well-known/mcp.json
+  Content-Type: application/mcp-server-card+json
+  Access-Control-Allow-Origin: *

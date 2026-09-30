@@ -1,0 +1,23 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json",
+  "name": "jaredsburrows.com/talks",
+  "title": "Jared Burrows — Talks",
+  "version": "1.0.0",
+  "description": "Read-only MCP server over Jared Burrows' conference talks. Lists the talks and returns any one of them in full, including its abstract, slides and video.",
+  "websiteUrl": "https://jaredsburrows.com",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://jaredsburrows.com/mcp",
+      "supportedProtocolVersions": ["2026-07-28"]
+    }
+  ],
+  "serverInfo": {
+    "name": "jaredsburrows.com/talks",
+    "version": "1.0.0"
+  },
+  "endpoint": "https://jaredsburrows.com/mcp",
+  "capabilities": {
+    "tools": ["list_talks", "get_talk"]
+  }
+}
