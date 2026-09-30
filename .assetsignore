@@ -18,5 +18,10 @@ package.json
 package-lock.json
 tsconfig.json
 tsconfig.browser.json
+tsconfig.jsdom.json
 wrangler.jsonc
+# The TypeScript sources for the two browser scripts. Their compiled .js
+# siblings in the same directory ARE served -- index.html loads them by path --
+# but the sources are for readers of the repo, not for visitors.
+static/js/*.ts
 **/.DS_Store
