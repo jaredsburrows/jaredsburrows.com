@@ -6,7 +6,7 @@ My blog, presentations, GitHub, and social links.
 [![Build](https://github.com/jaredsburrows/jaredsburrows.com/workflows/build/badge.svg)](https://github.com/jaredsburrows/jaredsburrows.com/actions)
 [![Twitter Follow](https://img.shields.io/twitter/follow/jaredsburrows.svg?style=social)](https://twitter.com/jaredsburrows)
 
-Personal website — no build step. Cloudflare Workers serves the repo as-is from its edge; two routes, `/` and `/mcp`, also run `src/worker.mts` (see "The Worker").
+Personal website. Cloudflare Workers serves the repo from its edge; two routes, `/` and `/mcp`, also run `src/worker.mts` (see "The Worker"). Everything served is a file committed here — the only compiled output is `static/js/*.js`, built from the `.ts` beside it and committed too (see "Browser scripts").
 
 ### Preview the website
 
@@ -31,10 +31,27 @@ Production TTLs live in `_headers`: CSS/JS cache for an hour, images and icons
 for 30 days, HTML revalidates on every view — so changes converge on their own,
 no cache-busting query strings.
 
+### Browser scripts
+
+`static/js/home.ts` and `static/js/talks.ts` are the sources. `npm run build`
+compiles them to `home.js` and `talks.js` in the same directory, and **those
+`.js` files are committed** — `index.html` loads them by path and Cloudflare
+serves this directory as-is, which is also what keeps `index.html` working when
+opened straight from `file://`.
+
+Never hand-edit `static/js/*.js`. Edit the `.ts`, run `npm run build`, and commit
+both. CI rebuilds and fails if the committed output disagrees with its source, so
+a forgotten build cannot ship the previous JavaScript behind a correct-looking
+diff.
+
+Compiling is the whole reason these two are the exception: the comments in the
+sources would otherwise be downloaded by every visitor, since this file is not
+minified. Stripping them saves about 1.4 KB gzipped on `home.js`.
+
 ### Add a talk
 
-Add one entry to `static/js/talks.js`, then mirror it into `api/talks.json`
-(see below). CI fails if the two disagree.
+Add one entry to `static/js/talks.ts`, run `npm run build`, then mirror it into
+`api/talks.json` (see below). CI fails if the two disagree.
 
 ### API
 
@@ -43,11 +60,13 @@ Add one entry to `static/js/talks.js`, then mirror it into `api/talks.json`
 all three as an [RFC 9727](https://www.rfc-editor.org/rfc/rfc9727) linkset, so
 an agent can find the API without being told where it is.
 
-`static/js/talks.js` stays the source a human edits — the homepage loads it
-directly, including over `file://`, which a `fetch` of the JSON would break.
-`api/talks.json` is its published copy. To regenerate it after editing a talk:
+`static/js/talks.ts` stays the source a human edits — the homepage loads its
+compiled `talks.js` directly, including over `file://`, which a `fetch` of the
+JSON would break. `api/talks.json` is its published copy. To regenerate it after
+editing a talk (build first, so the snippet reads the new data):
 
 ```
+npm run build
 node -e 'global.window={};require("./static/js/talks.js");
 require("fs").writeFileSync("api/talks.json",
   JSON.stringify({talks:window.TALKS},null,2)+"\n")'

@@ -2,20 +2,22 @@
   "name": "jaredsburrows-com",
   "version": "0.0.0",
   "private": true,
-  "description": "Type checking and CI tests only. The site has no build step: nothing here is bundled, compiled, or shipped to the edge.",
+  "description": "Type checking, CI tests, and one build step: static/js/*.ts compiles to the *.js the browser downloads. Nothing else is compiled or bundled.",
   "license": "Apache-2.0",
-  "//type": "MUST stay commonjs. .github/validate-*.js use require(); 'module' here would break all three validators, and they are what gate every deploy. The .mjs files in src/ are ESM by extension and are unaffected either way.",
+  "//type": "MUST stay commonjs. .github/validate-*.ts use require(); 'module' here would break all three validators, and they are what gate every deploy. The .mts files are ESM by extension and are unaffected either way.",
   "type": "commonjs",
   "engines": {
     "node": ">=24"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.browser.json && tsc -p tsconfig.jsdom.json"
+    "build": "tsc -p tsconfig.browser.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.browser.json --noEmit && tsc -p tsconfig.jsdom.json"
   },
   "devDependencies": {
     "@types/jsdom": "30.0.0",
     "@types/node": "26.6.3",
     "jsdom": "30.1.1",
     "typescript": "7.0.2"
-  }
+  },
+  "//build": "static/js/*.js is GENERATED from the .ts beside it and committed, because Cloudflare serves this directory as-is. Never hand-edit static/js/*.js -- edit the .ts and run `npm run build`. CI fails if the two disagree."
 }

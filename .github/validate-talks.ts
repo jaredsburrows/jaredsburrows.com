@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Validates static/js/talks.js so every entry renders correctly in home.js:
+// Validates the compiled static/js/talks.js so every entry renders correctly in
+// home.js (both are built from the .ts beside them):
 // the newest-first sort compares date strings and Intl formats them, so dates
 // must be real zero-padded YYYY-MM-DD; embed ids must look right; key typos
 // and copy-paste leftovers are rejected. node --check only catches syntax.

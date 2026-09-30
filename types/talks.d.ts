@@ -1,4 +1,4 @@
-// The shape of one entry in static/js/talks.js.
+// The shape of one entry in static/js/talks.ts.
 //
 // .github/validate-talks.ts is what actually enforces this at CI time -- it
 // checks the things a type cannot (real calendar dates, 32-hex speakerdeck

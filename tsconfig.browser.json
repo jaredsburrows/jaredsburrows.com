@@ -1,19 +1,45 @@
-// Type checking for the two scripts the browser actually downloads.
+// The two scripts the browser downloads -- and the only thing in this repo that
+// EMITS. Everything else is noEmit.
 //
-// These ship byte-for-byte out of the asset directory -- they are not bundled,
-// minified or transpiled -- so this config only reads them. `types: []` keeps
-// Node's globals out: code here that reaches for `process` or `require` is a
-// bug, and this is what makes it one.
+// static/js/*.ts are the sources; `npm run build` compiles them to
+// static/js/*.js beside them, and those .js files are committed, because
+// Cloudflare serves this directory as-is (`assets.directory: "."`) and
+// index.html loads them by path. Keeping the output in git is what preserves the
+// two properties that predate this config: every served file is a file in the
+// repo, and index.html still works opened straight from file://.
+//
+// CI rebuilds and runs `git diff --exit-code` over static/js, so a commit whose
+// .js does not match its .ts fails the build rather than shipping stale code.
+//
+// `types: []` keeps Node's globals out: code here that reaches for `process` or
+// `require` is a bug, and this is what makes it one.
 {
   "compilerOptions": {
-    "noEmit": true,
-    "allowJs": true,
-    "checkJs": true,
+    // allowJs MUST stay false. The emitted .js lands next to its .ts source, so
+    // with allowJs on, tsc would read its own output back as an input and refuse
+    // to overwrite it ("would overwrite input file").
+    "allowJs": false,
     "strict": true,
 
+    // Nothing stale ever ships: a type error aborts the emit instead of leaving
+    // the previous .js in place looking current.
+    "noEmitOnError": true,
+
+    // Source and output share a directory, which is deliberate -- the .js has to
+    // sit at the path index.html already requests.
+    "rootDir": "static/js",
+    "outDir": "static/js",
+
+    // The byte win, and the reason a build step is worth having at all: the
+    // prose in these files is for readers of the source, not for every visitor.
+    // home.js ships unminified, so comments were real transfer cost (+1.4 KB
+    // gzipped before this).
+    "removeComments": true,
+    "newLine": "lf",
+
     // Classic <script src> files, not modules: "preserve" leaves them as the
-    // global scripts they are. index.html loads them with
-    // `defer` and talks.js hands data to home.js over `window`.
+    // global scripts they are. index.html loads them with `defer`, and talks.ts
+    // hands data to home.ts over `window`.
     "module": "preserve",
     "target": "es2022",
     "lib": ["es2022", "dom", "dom.iterable"],
@@ -21,5 +47,11 @@
 
     "skipLibCheck": true
   },
-  "include": ["static/js/**/*.js", "types/*.d.ts"]
+  "include": ["static/js/**/*.ts", "types/*.d.ts"],
+  // Explicit and required. tsc's DEFAULT exclude contains outDir, so with
+  // outDir pointing at static/js -- where the sources live -- it quietly
+  // excluded them and compiled nothing, exiting 0 with no output. Overriding it
+  // is what makes the sources visible; allowJs:false is what keeps the emitted
+  // .js from being read back as input.
+  "exclude": []
 }

@@ -74,16 +74,31 @@ jobs:
       - name: Validate HTML
         run: git ls-files '*.html' | xargs java -jar node_modules/vnu-jar/build/dist/vnu.jar
 
-      # Type checking, not compiling: every config is noEmit, and Node runs the
-      # .ts/.mts files below by stripping types in place -- no build step, no
-      # emitted file. Three configs because each has a different set of globals:
-      # Node scripts, browser scripts, and the jsdom test that needs both. See
-      # the comments in each. Only static/js/ is still JavaScript, and its types
-      # live in JSDoc, which ships as comments because that file is unminified:
-      # +453 bytes gzipped. Everything else here is never served and costs
-      # nothing.
+      # Checking only -- the browser config is run with --noEmit here, and its
+      # real emit happens in the step below. Node runs the .ts/.mts files
+      # directly by stripping types in place, so nothing else compiles at all.
+      # Three configs because each has a different set of globals: Node scripts,
+      # browser scripts, and the jsdom test that needs both. See the comments in
+      # each.
       - name: Type check
         run: npm run typecheck
+
+      # The one build step in this repo. static/js/*.ts are the sources; the *.js
+      # beside them is what index.html loads and what Cloudflare serves, so the
+      # output is committed. This rebuilds it and fails if the committed copy
+      # disagrees -- otherwise a commit that edited the .ts and forgot to run
+      # `npm run build` would ship the previous JavaScript while the diff looked
+      # correct. Checked with `git status --porcelain`, not `git diff`, so a
+      # newly emitted file that was never committed is caught too.
+      - name: Build the browser scripts, and prove the committed output matches
+        run: |
+          npm run build
+          if [ -n "$(git status --porcelain -- static/js)" ]; then
+            echo "::error::static/js is stale. Run 'npm run build' and commit the result."
+            git status --porcelain -- static/js
+            git --no-pager diff -- static/js
+            exit 1
+          fi
 
       - name: Check JavaScript syntax
         run: for f in static/js/*.js; do node --check "$f"; done
