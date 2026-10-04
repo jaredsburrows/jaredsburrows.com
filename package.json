@@ -16,7 +16,7 @@
   "devDependencies": {
     "@types/jsdom": "30.0.0",
     "@types/node": "26.6.4",
-    "jsdom": "30.1.1",
+    "jsdom": "30.1.2",
     "typescript": "7.0.2"
   },
   "//build": "static/js/*.js is GENERATED from the .ts beside it and committed, because Cloudflare serves this directory as-is. Never hand-edit static/js/*.js -- edit the .ts and run `npm run build`. CI fails if the two disagree."
