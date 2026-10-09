@@ -20,7 +20,7 @@
     {
       "identifier": "urn:air:jaredsburrows.com:data:talks",
       "displayName": "Talks dataset",
-      "description": "The talk data itself: a JSON object holding a talks array, newest first, where each talk carries its date, title, venue, location, event link, abstract paragraphs and — where they exist — Speaker Deck and YouTube ids.",
+      "description": "The talk data itself: a JSON object holding a talks array, newest first, where each talk carries its date, title, venue, location, event link, abstract paragraphs and \u2014 where they exist \u2014 Speaker Deck and YouTube ids.",
       "type": "application/json",
       "url": "https://jaredsburrows.com/api/talks.json",
       "representativeQueries": [
@@ -44,6 +44,18 @@
       "identifier": "urn:air:jaredsburrows.com:mcp:talks",
       "type": "application/mcp-server-card+json",
       "url": "https://jaredsburrows.com/mcp/server-card"
+    },
+    {
+      "identifier": "urn:air:jaredsburrows.com:policy:auth",
+      "displayName": "Authentication policy",
+      "description": "The origin's authentication policy, in Markdown: none is required, offered or possible. Covers the public API, the MCP server at /mcp, why no OAuth or OpenID metadata is published, and what to send in Authorization (nothing).",
+      "type": "text/markdown",
+      "url": "https://jaredsburrows.com/auth.md",
+      "representativeQueries": [
+        "does jaredsburrows.com require an API key",
+        "how do I authenticate to the jaredsburrows.com API or MCP server",
+        "where do I register an agent or client for jaredsburrows.com"
+      ]
     }
   ]
 }
