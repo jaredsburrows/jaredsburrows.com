@@ -35,7 +35,14 @@ const repoRoot = path.join(__dirname, '..');
 const validator = path.join(__dirname, 'validate-site.ts');
 // Full tree (minus VCS/tooling dirs) so the file-reference check — unrelated to
 // what these tests probe — sees every asset it expects.
-const skipTopLevel = new Set(['.git', '.github', '.idea', '.wrangler', 'node_modules']);
+// Tool and VCS scratch directories: none of them is part of the site, and each
+// test below copies everything that is not listed here. `.claude` is the one
+// that matters in practice -- it holds agent worktrees, which are whole copies
+// of this repo, so a developer with a few of them was copying hundreds of
+// megabytes per test. Measured at 338 MB: 2m14s for the suite instead of ~10s,
+// almost all of it system time. CI never saw it, because a fresh checkout has
+// no `.claude`, which is exactly why it went unnoticed.
+const skipTopLevel = new Set(['.claude', '.git', '.github', '.idea', '.wrangler', 'node_modules']);
 const originalHomeJs = fs.readFileSync(path.join(repoRoot, 'static/js/home.js'), 'utf8');
 
 const originalHeaders = fs.readFileSync(path.join(repoRoot, '_headers'), 'utf8');
@@ -608,6 +615,48 @@ testFiles('a manifest entry url with a ../ traversal out of the repo fails close
 testFiles('a manifest entry url with a percent-encoded traversal fails closed',
   withManifestUrl(`${'https://jaredsburrows.com'}${ENCODED_TRAVERSAL}`),
   1, 'escapes the site root');
+
+// --- The authentication policy's manifest entry. Without it, an agent that
+// reads the manifest instead of crawling the site learns the API exists and
+// never learns it needs no credential -- so it either guesses or gives up on
+// the one question it has to settle first. Both copies are mutated together,
+// because the byte-equality check fires before the entries are parsed and would
+// otherwise be the error under test.
+const AUTH_ENTRY_ID = 'urn:air:jaredsburrows.com:policy:auth';
+assert.ok(originalAiCatalog.includes(AUTH_ENTRY_ID),
+  `fixture assumption broken: ${AI_CATALOG} no longer advertises ${AUTH_ENTRY_ID}`);
+
+/** Both manifest copies, with `mutate` applied to the parsed object. */
+const bothManifests = (mutate: (manifest: any) => void): Record<string, string> => {
+  const manifest = JSON.parse(originalAiCatalog);
+  mutate(manifest);
+  const text = JSON.stringify(manifest, null, 2) + '\n';
+  return { [AI_CATALOG]: text, [ARD]: text };
+};
+
+testFiles('a manifest with no authentication-policy entry fails closed',
+  bothManifests((manifest) => {
+    manifest.entries = manifest.entries.filter((entry: any) => entry.identifier !== AUTH_ENTRY_ID);
+  }),
+  1, `has no ${AUTH_ENTRY_ID} entry`);
+
+// Present but pointing elsewhere is the subtler regression: the manifest still
+// looks complete, and the entry resolves to a real document, so nothing else in
+// the build objects -- an agent just reads the wrong one.
+testFiles('an authentication-policy entry pointing at another document fails closed',
+  bothManifests((manifest) => {
+    const entry = manifest.entries.find((candidate: any) => candidate.identifier === AUTH_ENTRY_ID);
+    entry.url = 'https://jaredsburrows.com/index.md';
+  }),
+  1, 'rather than /auth.md');
+
+// --- auth.md must document /mcp for as long as a server card is published.
+// Deleting the section is the realistic way this regresses: the card stays, the
+// server stays, and the document that exists to answer "does this need a
+// token?" quietly stops answering it for the newest thing on the origin.
+testFiles('auth.md with its /mcp section removed fails closed while a card is published',
+  { 'auth.md': originalAuthMd.replace(/\n## The MCP server[\s\S]*$/, '\n') },
+  1, 'auth.md never mentions /mcp');
 
 // The Agentmap directive reaches the same helper, so the single fix covers it …
 testFiles('a robots.txt Agentmap with a ../ traversal out of the repo fails closed',

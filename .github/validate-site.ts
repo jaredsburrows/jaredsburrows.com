@@ -557,6 +557,12 @@ for (const endpoint of Object.keys(openapi?.paths ?? {})) {
 // an agent fetches a capability this site does not actually serve, which is a
 // worse outcome than publishing no manifest at all.
 const ARD_PATHS = ['.well-known/ai-catalog.json', '.well-known/ard.json'];
+// The authentication policy's entry in that manifest. It is the one question an
+// agent has to answer before it calls anything else here, and a prose link in
+// llms.txt is not a machine-readable answer: a client that reads the manifest
+// rather than crawling the site never reaches it.
+const AUTH_CATALOG_ID = 'urn:air:jaredsburrows.com:policy:auth';
+const AUTH_MD_PATH = '/auth.md';
 const ardText = new Map();
 for (const name of ARD_PATHS) {
   try {
@@ -599,6 +605,15 @@ for (const name of ARD_PATHS) {
     const reference = hasUrl ? sameOriginPath(entry.url) : undefined;
     if (reference !== undefined) checkLocal(label, reference);
   });
+
+  // Checked per file rather than once, for the same reason the parse is: byte
+  // equality would happily pass a pair that had both lost the entry.
+  const authEntry = manifest.entries.find((entry: any) => entry.identifier === AUTH_CATALOG_ID);
+  if (!authEntry) {
+    bad(`${name} has no ${AUTH_CATALOG_ID} entry — the authentication policy is then discoverable only by crawling prose, and an agent that reads this manifest instead never learns whether it needs a credential`);
+  } else if (sameOriginPath(authEntry.url ?? '') !== AUTH_MD_PATH) {
+    bad(`${name}'s ${AUTH_CATALOG_ID} entry points at ${JSON.stringify(authEntry.url)} rather than ${AUTH_MD_PATH}`);
+  }
 }
 
 // robots.txt Agentmap: the third route to the same manifest, and the one with
@@ -783,6 +798,21 @@ if (!fs.existsSync(authMdPath)) {
     bad(h1s.length === 0
       ? 'auth.md has no H1 heading containing "auth.md" (found no ATX H1 at all) — agents locate the document by that heading'
       : `auth.md has no H1 heading containing "auth.md" — found [${h1s.join(', ')}]`);
+  }
+
+  // This document has to say whether /mcp wants credentials. It is the question
+  // an agent asks before connecting, and silence is the one answer it cannot act
+  // on — it either guesses or gives up. The card declares no authentication
+  // scheme, which only reads as "none needed" if something states the absence is
+  // deliberate; this file is that something.
+  //
+  // Unconditional, deliberately. Gating it on the card's existence looked more
+  // careful and was worse: the three card paths are themselves required above,
+  // so "no card published" is unreachable in a tree that passes at all, and the
+  // guard would have been a branch no test could ever enter. Retiring the server
+  // means editing this check, which is the honest cost of removing it.
+  if (!/\/mcp\b/.test(authMd)) {
+    bad('auth.md never mentions /mcp, but an MCP server card is published — an agent that reads the auth policy learns nothing about whether the server it just discovered needs a credential');
   }
 }
 
