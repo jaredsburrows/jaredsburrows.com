@@ -912,6 +912,163 @@ if (!fs.existsSync(path.join(root, SKILLS_INDEX))) {
   }
 }
 
+// --- OAuth metadata: /.well-known/oauth-protected-resource (RFC 9728) and
+// /.well-known/oauth-authorization-server (RFC 8414). This origin protects
+// nothing, and for a long time said so by publishing neither document — a
+// metadata file naming endpoints that do not exist is worse than no file. They
+// are published now on one condition, and this block is that condition: every
+// claim in them has to be TRUE of this tree. The lists of what is supported
+// are empty because nothing is; the endpoints are named because src/oauth.mts
+// answers them; the key set is empty because nothing is signed.
+//
+// Each of those is one plausible edit away from false. "Add a grant type so the
+// document looks complete" turns it from a statement that nothing is on offer
+// into an advertisement for a flow no client can finish, and every file
+// involved stays valid JSON. So the emptiness is asserted, not assumed.
+const OAUTH_RESOURCE = '.well-known/oauth-protected-resource';
+const OAUTH_SERVER = '.well-known/oauth-authorization-server';
+const OAUTH_SOURCE = 'src/oauth.mts';
+
+/** Parsed metadata, or undefined once the reason it is unusable has been reported. */
+const oauthDocument = (name: string): Record<string, unknown> | undefined => {
+  if (!fs.existsSync(path.join(root, name))) {
+    bad(`${name} is missing — /auth.md and the other OAuth document both point at it`);
+    return undefined;
+  }
+  const parsed = parseJson(name);
+  if (parsed === undefined) return undefined;
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    bad(`${name} is not a JSON object`);
+    return undefined;
+  }
+  return parsed;
+};
+
+// "Supports nothing" has to be written down. For most of these members an
+// absent key does not mean "none": RFC 8414 reads a missing
+// grant_types_supported as ["authorization_code", "implicit"], and RFC 9728
+// says outright that omitting bearer_methods_supported does not indicate that
+// none are supported. Only an explicit [] says it.
+const requireEmptyList = (name: string, document: Record<string, unknown>, member: string, meaning: string) => {
+  const value = document[member];
+  if (!Array.isArray(value)) {
+    bad(`${name} must state ${member} as an explicit empty array — left out, a client assumes a default rather than "none", and this origin ${meaning}`);
+  } else if (value.length > 0) {
+    bad(`${name} lists ${member} ${JSON.stringify(value)}, but this origin ${meaning} — an entry here advertises something no request can ever use`);
+  }
+};
+
+const oauthResource = oauthDocument(OAUTH_RESOURCE);
+const oauthServer = oauthDocument(OAUTH_SERVER);
+
+// Both RFCs give the client the same instruction (9728 section 3.3, 8414
+// section 3.3): the identifier inside the document must be identical to the one
+// the well-known URL was built from, or the document MUST NOT be used. Both
+// files sit at the root of this origin, so both identifiers are the origin.
+if (oauthResource && oauthResource.resource !== SITE_ORIGIN) {
+  bad(`${OAUTH_RESOURCE} has resource ${JSON.stringify(oauthResource.resource)}, but it is served for ${SITE_ORIGIN} — RFC 9728 tells a client to discard metadata whose resource is not the one it asked about`);
+}
+if (oauthServer && oauthServer.issuer !== SITE_ORIGIN) {
+  bad(`${OAUTH_SERVER} has issuer ${JSON.stringify(oauthServer.issuer)}, but it is served for ${SITE_ORIGIN} — RFC 8414 tells a client to discard metadata whose issuer is not the one it asked about`);
+}
+if (oauthResource && oauthServer && !isDeepStrictEqual(oauthResource.authorization_servers, [oauthServer.issuer])) {
+  bad(`${OAUTH_RESOURCE} lists authorization_servers ${JSON.stringify(oauthResource.authorization_servers)}, which is not exactly the issuer in ${OAUTH_SERVER} — the first document sends a client to an authorization server the second does not describe`);
+}
+
+if (oauthResource) {
+  requireEmptyList(OAUTH_RESOURCE, oauthResource, 'scopes_supported', 'has no scopes, because nothing here is protected');
+  requireEmptyList(OAUTH_RESOURCE, oauthResource, 'bearer_methods_supported', 'reads no bearer token from any request');
+}
+
+// What wrangler.jsonc routes to the Worker. Read from the text, like the
+// constants out of src/mcp.mts above: the file is JSONC, and all that is wanted
+// from it is one array of string literals.
+const workerRoutes = (() => {
+  try {
+    const list = /"run_worker_first"\s*:\s*\[([^\]]*)\]/.exec(read('wrangler.jsonc'));
+    return list ? [...list[1].matchAll(/"([^"]*)"/g)].map((match) => match[1]) : [];
+  } catch {
+    return [];
+  }
+})();
+const oauthSource = (() => {
+  try {
+    return read(OAUTH_SOURCE);
+  } catch {
+    return '';
+  }
+})();
+
+if (oauthServer) {
+  requireEmptyList(OAUTH_SERVER, oauthServer, 'grant_types_supported', 'grants nothing — /oauth/token refuses every request');
+  requireEmptyList(OAUTH_SERVER, oauthServer, 'response_types_supported', 'authorizes nothing — /oauth/authorize refuses every request');
+  requireEmptyList(OAUTH_SERVER, oauthServer, 'scopes_supported', 'has no scopes, because nothing here is protected');
+
+  // Every endpoint the document names, not just the two it names today: a
+  // registration or revocation endpoint added later is the same claim about a
+  // URL. A static file cannot be one — the asset router answers POST with 405
+  // and has no way to refuse a request in the form OAuth prescribes — so each
+  // must be routed to the Worker and handled by the module that answers them.
+  const endpoints = Object.entries(oauthServer).filter(([member]) => member.endsWith('_endpoint'));
+  for (const required of ['authorization_endpoint', 'token_endpoint']) {
+    if (typeof oauthServer[required] !== 'string') {
+      bad(`${OAUTH_SERVER} has no ${required} — the document describes an authorization server without saying where it is`);
+    }
+  }
+  for (const [member, value] of endpoints) {
+    const route = typeof value === 'string' ? sameOriginPath(value) : undefined;
+    if (route === undefined) {
+      bad(`${OAUTH_SERVER} ${member} is ${JSON.stringify(value)}, which is not a URL on ${SITE_ORIGIN} — this site can only answer for its own origin`);
+      continue;
+    }
+    if (!workerRoutes.includes(route)) {
+      bad(`${OAUTH_SERVER} names ${member} ${route}, but wrangler.jsonc run_worker_first does not route that path to the Worker — the asset router would answer it with the 404 page`);
+    }
+    if (!oauthSource.includes(`'${route}'`)) {
+      bad(`${OAUTH_SERVER} names ${member} ${route}, but ${OAUTH_SOURCE} does not handle that path — the metadata would advertise an endpoint nothing answers`);
+    }
+  }
+
+  // The key set is a file like any other reference, and it has to stay empty
+  // for the same reason the lists do: a key published here is a key some
+  // client will try to verify a token against, and no token exists.
+  const jwksPath = typeof oauthServer.jwks_uri === 'string' ? sameOriginPath(oauthServer.jwks_uri) : undefined;
+  if (jwksPath === undefined) {
+    bad(`${OAUTH_SERVER} jwks_uri is ${JSON.stringify(oauthServer.jwks_uri)}, which is not a URL on ${SITE_ORIGIN}`);
+  } else if (checkLocal(OAUTH_SERVER, jwksPath) !== undefined) {
+    const jwksName = jwksPath.replace(/^\//, '');
+    const jwks = parseJson(jwksName);
+    if (jwks !== undefined && !(Array.isArray(jwks?.keys) && jwks.keys.length === 0)) {
+      bad(`${jwksName} must be exactly an empty key set ({"keys": []}) — this origin signs nothing, so a key published here verifies nothing`);
+    }
+  }
+}
+
+// Both documents point a reader at the prose that explains them.
+for (const [name, document, member] of [
+  [OAUTH_RESOURCE, oauthResource, 'resource_documentation'],
+  [OAUTH_SERVER, oauthServer, 'service_documentation'],
+] as const) {
+  const link = document?.[member];
+  if (!document) continue;
+  const reference = typeof link === 'string' ? sameOriginPath(link) : undefined;
+  if (reference === undefined) {
+    bad(`${name} ${member} is ${JSON.stringify(link)} — it should link the document that says why every list here is empty (/auth.md)`);
+  } else {
+    checkLocal(name, reference);
+  }
+}
+
+// Neither well-known path has an extension, so Cloudflare infers no type and
+// the response goes out with no Content-Type at all (measured for the server
+// card above). Both RFCs make application/json a MUST.
+for (const name of [OAUTH_RESOURCE, OAUTH_SERVER]) {
+  const rule = headerRuleValues(`/${name}`);
+  if (!rule?.some((line) => /^Content-Type:\s*application\/json\b/i.test(line))) {
+    bad(`_headers does not set Content-Type: application/json on /${name} — the path has no extension, so without the rule it is served with no type at all`);
+  }
+}
+
 
 // --- /auth.md discovery: agent tooling finds this document by fetching
 // /auth.md and matching an H1 that contains "auth.md". Both the file and the
@@ -1258,4 +1415,4 @@ if (errors.length > 0) {
   for (const message of errors) console.error(`  - ${message}`);
   process.exit(1);
 }
-console.log('✓ site invariants hold (CSP parity + coverage, id contract, file references, JSON-LD, auth.md discovery, markdown twin, llms.txt index, API catalog, ARD manifest, MCP server card, agent skills index, _headers overlap, / stays uncacheable, _redirects syntax)');
+console.log('✓ site invariants hold (CSP parity + coverage, id contract, file references, JSON-LD, auth.md discovery, markdown twin, llms.txt index, API catalog, ARD manifest, MCP server card, agent skills index, OAuth metadata, _headers overlap, / stays uncacheable, _redirects syntax)');

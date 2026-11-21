@@ -1,14 +1,17 @@
 // Markdown content negotiation for the homepage, and the front door for the MCP
-// server in mcp.mts — the two paths this site runs code on.
+// server in mcp.mts and the two OAuth endpoints in oauth.mts — the four paths
+// this site runs code on.
 //
-// `assets.run_worker_first: ["/", "/mcp"]` in wrangler.jsonc scopes it to those
-// two: every other path (CSS, JS, images, /index.md itself, /api/*, the card at
-// /mcp/server-card, the 404 page) is served by Cloudflare's asset router without
-// ever invoking this script, which is both faster and unbilled. Both patterns
-// are exact matches — "/mcp" does not capture "/mcp/server-card". On `/` the
-// script asks one question — did the client name `text/markdown` in `Accept`? —
-// and answers it with either the hand-written markdown twin or the ordinary HTML
-// page. On `/mcp` it hands the request to mcp.mts and does nothing else.
+// `assets.run_worker_first` in wrangler.jsonc scopes it to those four: every
+// other path (CSS, JS, images, /index.md itself, /api/*, the card at
+// /mcp/server-card, /oauth/jwks.json, the 404 page) is served by Cloudflare's
+// asset router without ever invoking this script, which is both faster and
+// unbilled. Every pattern is an exact match — "/mcp" does not capture
+// "/mcp/server-card". On `/` the script asks one question — did the client name
+// `text/markdown` in `Accept`? — and answers it with either the hand-written
+// markdown twin or the ordinary HTML page. On `/mcp` it hands the request to
+// mcp.mts, on `/oauth/authorize` and `/oauth/token` to oauth.mts, and does
+// nothing else.
 //
 // `parseAccept`, `exactQuality`, `effectiveQuality`, `wantsMarkdown` and
 // `varyWithAccept` are ported from jaredsburrows/burrows.tools#279
@@ -36,6 +39,7 @@
 // Node opens the literal path: it does no extension rewriting, and nothing is
 // emitted for it to rewrite to.
 import { handleMcp } from './mcp.mts';
+import { handleOAuth } from './oauth.mts';
 
 /** The media type an agent must name exactly to be served markdown. */
 const MARKDOWN_MEDIA_TYPE = 'text/markdown';
@@ -239,6 +243,10 @@ export default {
     // is still served by the asset router and stays unbilled. Verified under
     // `wrangler dev`, not assumed.
     if (url.pathname === '/mcp') return handleMcp(request, env);
+    // The two endpoints the OAuth metadata names. Each refuses every request;
+    // see oauth.mts for why they exist at all. Null means "not one of mine".
+    const refusal = handleOAuth(request);
+    if (refusal) return refusal;
     // Retrieval only: negotiating a representation is meaningless for a request
     // that is not asking for one. `/index.html` is absent on purpose — the asset
     // router redirects it to `/` (html_handling: auto-trailing-slash) before this

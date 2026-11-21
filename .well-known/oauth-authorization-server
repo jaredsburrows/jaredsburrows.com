@@ -1,0 +1,10 @@
+{
+  "issuer": "https://jaredsburrows.com",
+  "authorization_endpoint": "https://jaredsburrows.com/oauth/authorize",
+  "token_endpoint": "https://jaredsburrows.com/oauth/token",
+  "jwks_uri": "https://jaredsburrows.com/oauth/jwks.json",
+  "scopes_supported": [],
+  "response_types_supported": [],
+  "grant_types_supported": [],
+  "service_documentation": "https://jaredsburrows.com/auth.md"
+}

@@ -32,8 +32,9 @@ authentication, no user data and no write surface.
 
 ## Policies
 
-- [Authentication](https://jaredsburrows.com/auth.md): none, ever. No issuer, no
-  protected resources, and no registration route worth probing for.
+- [Authentication](https://jaredsburrows.com/auth.md): none, ever. Nothing here
+  takes a token, and the OAuth metadata this origin publishes says so in OAuth's
+  own terms: no grant types, no scopes, no bearer methods.
 - [Crawl and training permissions](https://jaredsburrows.com/robots.txt):
   `ai-train=yes, search=yes, ai-input=yes` for every user agent, with nothing
   disallowed.

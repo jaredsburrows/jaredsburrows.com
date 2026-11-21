@@ -6,7 +6,7 @@ My blog, presentations, GitHub, and social links.
 [![Build](https://github.com/jaredsburrows/jaredsburrows.com/workflows/build/badge.svg)](https://github.com/jaredsburrows/jaredsburrows.com/actions)
 [![Twitter Follow](https://img.shields.io/twitter/follow/jaredsburrows.svg?style=social)](https://twitter.com/jaredsburrows)
 
-Personal website. Cloudflare Workers serves the repo from its edge; two routes, `/` and `/mcp`, also run `src/worker.mts` (see "The Worker"). Everything served is a file committed here — the only compiled output is `static/js/*.js`, built from the `.ts` beside it and committed too (see "Browser scripts").
+Personal website. Cloudflare Workers serves the repo from its edge; four routes — `/`, `/mcp`, `/oauth/authorize` and `/oauth/token` — also run `src/worker.mts` (see "The Worker"). Everything served is a file committed here — the only compiled output is `static/js/*.js`, built from the `.ts` beside it and committed too (see "Browser scripts").
 
 ### Preview the website
 
@@ -150,6 +150,32 @@ The same check fails the build if the skill's frontmatter stops matching the
 index, if a URL in it stops naming a file here, or if it stops naming a tool or
 the protocol revision `src/mcp.mts` exports.
 
+### OAuth metadata
+
+Nothing here needs a token, and the OAuth metadata is how the site says so to a
+client that asks in OAuth. `/.well-known/oauth-protected-resource`
+([RFC 9728](https://www.rfc-editor.org/rfc/rfc9728)) names this origin as the
+resource and lists no scopes and no bearer methods.
+`/.well-known/oauth-authorization-server`
+([RFC 8414](https://www.rfc-editor.org/rfc/rfc8414)) lists no grant types and no
+response types, and `/oauth/jwks.json` is an empty key set.
+
+A document that names an authorization endpoint and a token endpoint is making a
+claim about two URLs, so both exist: `src/oauth.mts` answers `/oauth/authorize`
+with a refusal that never redirects and `/oauth/token` with
+`unsupported_grant_type`, each pointing at `/auth.md`. Neither reads its input,
+keeps state or holds a secret.
+
+**The empty lists are the point, not a placeholder.** Adding a grant type, a
+scope or a key advertises a flow this site does not implement, and
+`validate-site.ts` fails the build if any of them stops being empty, if the two
+documents disagree about the issuer, or if an endpoint in the metadata is not
+one the Worker is routed for.
+
+```
+node --test src/oauth.test.mts
+```
+
 ### The Worker
 
 `src/worker.mts` is the server code on this site. `_headers` and
@@ -166,10 +192,11 @@ that already holds the Markdown homepage gets a 304 rather than the document
 again. The two carry different ETags, so neither one's validator can ever
 produce a 304 for the other.
 
-`assets.run_worker_first: ["/", "/mcp"]` in `wrangler.jsonc` scopes it to those
-two paths, and `assets.binding` is what gives it `env.ASSETS.fetch`. Both are
-exact matches, so `/mcp` does not capture `/mcp/server-card` — the card stays a
-static asset. Every other path is matched by Cloudflare's asset router before
+`assets.run_worker_first` in `wrangler.jsonc` scopes it to four paths — `/`,
+`/mcp`, and the two OAuth endpoints (see "OAuth metadata") — and
+`assets.binding` is what gives it `env.ASSETS.fetch`. All four are exact
+matches, so `/mcp` does not capture `/mcp/server-card` and `/oauth/token` does
+not capture `/oauth/jwks.json` — both stay static assets. Every other path is matched by Cloudflare's asset router before
 any code runs, so those requests are neither slowed down nor billed as Worker
 invocations.
 

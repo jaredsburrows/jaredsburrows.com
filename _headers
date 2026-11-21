@@ -88,6 +88,19 @@
 /.well-known/agent-skills/*
   Access-Control-Allow-Origin: *
 
+# OAuth metadata: RFC 9728 for the resource, RFC 8414 for the authorization
+# server. Neither well-known path has an extension, so like the api-catalog
+# above Cloudflare infers no type for them at all, and both RFCs make
+# application/json a MUST — these rules are the only thing that sets it.
+# Access-Control-Allow-Origin so a browser-based agent can read them.
+/.well-known/oauth-protected-resource
+  Content-Type: application/json
+  Access-Control-Allow-Origin: *
+
+/.well-known/oauth-authorization-server
+  Content-Type: application/json
+  Access-Control-Allow-Origin: *
+
 # MCP server card, published at three paths. /mcp/server-card is the location
 # SEP-2127 reserves (<streamable-http-url>/server-card); the two .well-known
 # copies are what today's scanners probe, and SEP-2127 explicitly declined to

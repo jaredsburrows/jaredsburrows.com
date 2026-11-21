@@ -1318,5 +1318,138 @@ testFiles('a protocol revision the skill does not name fails the build',
   1, 'without naming `2099-01-01`');
 
 
+// --- OAuth metadata. Published on the condition that every claim in it is
+// true of this tree, so each case below makes exactly one claim false and
+// expects the build to stop. The first group is the one that matters most: the
+// documents say this origin supports nothing, and the tempting edit is to make
+// them look complete.
+const OAUTH_RESOURCE = '.well-known/oauth-protected-resource';
+const OAUTH_SERVER = '.well-known/oauth-authorization-server';
+const JWKS = 'oauth/jwks.json';
+const originalOauthResource = fs.readFileSync(path.join(repoRoot, OAUTH_RESOURCE), 'utf8');
+const originalOauthServer = fs.readFileSync(path.join(repoRoot, OAUTH_SERVER), 'utf8');
+const originalWrangler = fs.readFileSync(path.join(repoRoot, 'wrangler.jsonc'), 'utf8');
+const originalOauthSource = fs.readFileSync(path.join(repoRoot, 'src/oauth.mts'), 'utf8');
+for (const route of ['"/oauth/authorize"', '"/oauth/token"']) {
+  assert.ok(originalWrangler.includes(route), `fixture assumption broken: wrangler.jsonc no longer routes ${route}`);
+}
+
+/** One metadata document, with `mutate` applied to its parsed form. */
+const withOauth = (name: string, original: string, mutate: (document: any) => void): Record<string, string> => {
+  const document = JSON.parse(original);
+  mutate(document);
+  return { [name]: `${JSON.stringify(document, null, 2)}\n` };
+};
+const withResource = (mutate: (document: any) => void) => withOauth(OAUTH_RESOURCE, originalOauthResource, mutate);
+const withServer = (mutate: (document: any) => void) => withOauth(OAUTH_SERVER, originalOauthServer, mutate);
+
+testFiles('advertising a grant type nothing implements fails the build',
+  withServer((server) => { server.grant_types_supported = ['authorization_code']; }),
+  1, 'lists grant_types_supported ["authorization_code"]');
+
+testFiles('advertising a response type nothing implements fails the build',
+  withServer((server) => { server.response_types_supported = ['code']; }),
+  1, 'lists response_types_supported ["code"]');
+
+// Leaving the member out is not the same as an empty list: RFC 8414 reads a
+// missing grant_types_supported as authorization_code plus implicit.
+testFiles('leaving grant_types_supported out, which a client reads as the default grants, fails the build',
+  withServer((server) => { delete server.grant_types_supported; }),
+  1, 'must state grant_types_supported as an explicit empty array');
+
+testFiles('claiming the resource accepts bearer tokens in a header fails the build',
+  withResource((resource) => { resource.bearer_methods_supported = ['header']; }),
+  1, 'lists bearer_methods_supported ["header"]');
+
+testFiles('leaving bearer_methods_supported out, which says nothing either way, fails the build',
+  withResource((resource) => { delete resource.bearer_methods_supported; }),
+  1, 'must state bearer_methods_supported as an explicit empty array');
+
+testFiles('advertising a scope on the resource fails the build',
+  withResource((resource) => { resource.scopes_supported = ['talks:read']; }),
+  1, 'lists scopes_supported ["talks:read"]');
+
+testFiles('advertising a scope on the authorization server fails the build',
+  withServer((server) => { server.scopes_supported = ['openid']; }),
+  1, 'lists scopes_supported ["openid"]');
+
+testFiles('publishing a signing key fails the build',
+  { [JWKS]: '{"keys":[{"kty":"OKP","crv":"Ed25519","x":"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"}]}\n' },
+  1, 'must be exactly an empty key set');
+
+testFiles('a key set that is not a key set fails the build',
+  { [JWKS]: '{}\n' },
+  1, 'must be exactly an empty key set');
+
+testFiles('a missing key set fails the build',
+  { [JWKS]: null },
+  1, 'references missing file /oauth/jwks.json');
+
+// --- The two documents have to describe one deployment: this origin.
+testFiles('a resource identifier that is not this origin fails the build',
+  withResource((resource) => { resource.resource = 'https://api.jaredsburrows.com'; }),
+  1, 'tells a client to discard metadata whose resource is not the one it asked about');
+
+// A trailing slash is a different identifier: both RFCs compare the strings.
+testFiles('an issuer with a trailing slash fails the build',
+  { ...withServer((server) => { server.issuer = 'https://jaredsburrows.com/'; }),
+    ...withResource((resource) => { resource.authorization_servers = ['https://jaredsburrows.com/']; }) },
+  1, 'tells a client to discard metadata whose issuer is not the one it asked about');
+
+testFiles('a resource that points at an authorization server the other document does not describe fails the build',
+  withResource((resource) => { resource.authorization_servers = ['https://accounts.example.com']; }),
+  1, 'is not exactly the issuer in');
+
+testFiles('a missing protected-resource document fails the build',
+  { [OAUTH_RESOURCE]: null },
+  1, `${OAUTH_RESOURCE} is missing`);
+
+testFiles('a missing authorization-server document fails the build',
+  { [OAUTH_SERVER]: null },
+  1, `${OAUTH_SERVER} is missing`);
+
+testFiles('an authorization-server document that is not valid JSON fails the build',
+  { [OAUTH_SERVER]: originalOauthServer.replace(/\}\s*$/, '') },
+  1, `${OAUTH_SERVER} is not valid JSON`);
+
+// --- Every endpoint the metadata names has to be one the Worker answers.
+testFiles('an endpoint the Worker is not routed for fails the build',
+  { 'wrangler.jsonc': originalWrangler.replace(', "/oauth/token"', '') },
+  1, 'names token_endpoint /oauth/token, but wrangler.jsonc run_worker_first does not route that path');
+
+testFiles('an endpoint renamed in the metadata alone fails the build',
+  withServer((server) => { server.token_endpoint = 'https://jaredsburrows.com/oauth2/token'; }),
+  1, ['run_worker_first does not route that path', 'src/oauth.mts does not handle that path']);
+
+testFiles('an endpoint renamed in the Worker alone fails the build',
+  { 'src/oauth.mts': originalOauthSource.replace("'/oauth/authorize'", "'/oauth2/authorize'") },
+  1, 'names authorization_endpoint /oauth/authorize, but src/oauth.mts does not handle that path');
+
+// The check covers endpoints the document does not name today.
+testFiles('a registration endpoint added to the metadata with nothing behind it fails the build',
+  withServer((server) => { server.registration_endpoint = 'https://jaredsburrows.com/oauth/register'; }),
+  1, 'names registration_endpoint /oauth/register');
+
+testFiles('an endpoint on another origin fails the build',
+  withServer((server) => { server.token_endpoint = 'https://auth.example.com/token'; }),
+  1, 'token_endpoint is "https://auth.example.com/token", which is not a URL on');
+
+testFiles('metadata with no token endpoint at all fails the build',
+  withServer((server) => { delete server.token_endpoint; }),
+  1, 'has no token_endpoint');
+
+testFiles('a documentation link to a file this site does not serve fails the build',
+  withServer((server) => { server.service_documentation = 'https://jaredsburrows.com/docs/oauth.md'; }),
+  1, 'references missing file /docs/oauth.md');
+
+for (const name of [OAUTH_RESOURCE, OAUTH_SERVER]) {
+  const rule = `/${name}\n  Content-Type: application/json\n`;
+  assert.ok(originalHeaders.includes(rule), `fixture assumption broken: _headers no longer types /${name}`);
+  testFiles(`dropping the Content-Type rule on the extensionless /${name} fails the build`,
+    { '_headers': originalHeaders.replace(rule, `/${name}\n`) },
+    1, `Content-Type: application/json on /${name}`);
+}
+
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);
