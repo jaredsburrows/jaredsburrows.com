@@ -26,6 +26,9 @@ authentication, no user data and no write surface.
 - [Agent manifest](https://jaredsburrows.com/.well-known/ard.json): everything
   this origin offers an agent, in one file. Served byte-identically at
   [/.well-known/ai-catalog.json](https://jaredsburrows.com/.well-known/ai-catalog.json).
+- [Agent skills](https://jaredsburrows.com/.well-known/agent-skills/index.json):
+  the discovery index for the one skill this origin publishes — how to look up
+  the talks — with a SHA-256 digest of the file it points at.
 
 ## Policies
 

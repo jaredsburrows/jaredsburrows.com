@@ -45,6 +45,7 @@
 // resolves a bare `require()` to `any` in a .ts file, where it special-cased and
 // typed it in .js: without them `fs.readFileSync` returns `any` and every string
 // derived from a file silently stops being checked.
+const crypto: typeof import('crypto') = require('crypto');
 const fs: typeof import('fs') = require('fs');
 const path: typeof import('path') = require('path');
 const { isDeepStrictEqual }: typeof import('util') = require('util');
@@ -239,8 +240,11 @@ const SITE_ORIGIN = 'https://jaredsburrows.com';
 /**
  * @param source File the reference was found in, for the message.
  * @param reference The href/src as written.
+ * @returns The file the reference resolves to, or undefined when it resolves
+ *   to nothing this site serves — which has then already been reported. Most
+ *   callers only want the report; the agent skills check reads the file.
  */
-const checkLocal = (source: string, reference: string) => {
+const checkLocal = (source: string, reference: string): string | undefined => {
   let url;
   try {
     url = new URL(reference, `${SITE_ORIGIN}/`);
@@ -268,7 +272,9 @@ const checkLocal = (source: string, reference: string) => {
   }
   if (!fs.existsSync(target)) {
     bad(`${source} references missing file ${reference}`);
+    return;
   }
+  return target;
 };
 // An absolute URL back to this origin names a file in this tree just as surely
 // as a relative path does. og:image and twitter:image have to be absolute for
@@ -758,6 +764,154 @@ for (const line of redirects.split('\n')) {
   }
 }
 
+// --- Agent Skills discovery index (Agent Skills Discovery RFC v0.2.0). The
+// index at /.well-known/agent-skills/index.json lists each skill this origin
+// publishes, with a SHA-256 of the file it points at, and the RFC makes
+// verifying that digest a client MUST: on a mismatch the skill is rejected
+// outright. So this is the one discovery document here that an edit to ANOTHER
+// file breaks. Reword one sentence of a SKILL.md and the digest beside it is
+// wrong, the JSON is still valid, nothing renders either file, and every
+// conforming client silently stops loading the skill. A hand-copied hash is a
+// second copy of the file's contents, and a second copy only stays true if
+// something recomputes it — this does.
+//
+// The skill restates facts the rest of the tree owns (the tool names and the
+// protocol revision in src/mcp.mts, the URLs of files in this directory), so
+// those are pinned too. An agent that loads a skill does exactly what it says,
+// and a skill that names a renamed tool sends it to call something that errors.
+const SKILLS_INDEX = '.well-known/agent-skills/index.json';
+const SKILLS_SCHEMA = 'https://schemas.agentskills.io/discovery/0.2.0/schema.json';
+// The Agent Skills naming rule: 1-64 characters of lowercase letters, digits
+// and hyphens, with no hyphen first, last or doubled.
+const SKILL_NAME = /^(?=.{1,64}$)[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const SKILL_DESCRIPTION_MAX = 1024;
+
+if (!fs.existsSync(path.join(root, SKILLS_INDEX))) {
+  bad(`${SKILLS_INDEX} is missing — it is the one place an agent looks to learn which skills this origin publishes`);
+} else {
+  const skillsIndex = parseJson(SKILLS_INDEX);
+  // `undefined` is parseJson's "already reported". Anything else that is not a
+  // plain object — `null`, an array, a bare string — is valid JSON and still
+  // not an index, and would otherwise fall straight through every check below.
+  if (skillsIndex !== undefined && (skillsIndex === null || typeof skillsIndex !== 'object' || Array.isArray(skillsIndex))) {
+    bad(`${SKILLS_INDEX} is not a JSON object with $schema and skills members`);
+  } else if (skillsIndex !== undefined) {
+    // The $schema URI is an opaque version identifier, and a client that does
+    // not recognise it is told not to process the index at all — so a typo
+    // here hides every skill, not just one.
+    if (skillsIndex.$schema !== SKILLS_SCHEMA) {
+      bad(`${SKILLS_INDEX} has $schema ${JSON.stringify(skillsIndex.$schema)}, but v0.2.0 clients match it against ${SKILLS_SCHEMA} and skip an index they do not recognise`);
+    }
+    if (!Array.isArray(skillsIndex.skills) || skillsIndex.skills.length === 0) {
+      bad(`${SKILLS_INDEX} has no skills array with at least one entry, so it advertises no skill at all`);
+    } else {
+      const listed = new Set<string>();
+      skillsIndex.skills.forEach((skill: any, position: number) => {
+        const label = `${SKILLS_INDEX} skill ${position + 1}`;
+        const name = skill?.name;
+        if (typeof name !== 'string' || !SKILL_NAME.test(name)) {
+          bad(`${label} has name ${JSON.stringify(name)} — a skill name is 1-64 characters of lowercase letters, digits and single hyphens, with no hyphen first or last`);
+        } else if (listed.has(name)) {
+          bad(`${label} repeats the name ${JSON.stringify(name)} — a client keys skills by name, so one of the two is unreachable`);
+        } else {
+          listed.add(name);
+        }
+        // The RFC also defines "archive". It is refused here rather than
+        // waved through: nothing below can read a SKILL.md inside a tarball,
+        // so an archive entry would pass with its contents unchecked. Publish
+        // one by teaching this check to unpack it first.
+        if (skill?.type !== 'skill-md') {
+          bad(`${label} has type ${JSON.stringify(skill?.type)} — only "skill-md" is checked here, and an entry this file cannot read is an entry nothing keeps honest`);
+        }
+        const description = skill?.description;
+        if (typeof description !== 'string' || description.trim() === '' || description.length > SKILL_DESCRIPTION_MAX) {
+          bad(`${label} needs a description of 1-${SKILL_DESCRIPTION_MAX} characters — it is all an agent reads when deciding whether to load the skill`);
+        }
+        if (typeof skill?.url !== 'string') {
+          bad(`${label} has no url, so there is no artifact to fetch`);
+          return;
+        }
+        // Resolved the way a client resolves it (RFC 3986, against the index's
+        // own URL), so a relative url is checked as the file it really names.
+        let artifact;
+        try {
+          artifact = new URL(skill.url, `${SITE_ORIGIN}/${SKILLS_INDEX}`);
+        } catch {
+          bad(`${label} url ${JSON.stringify(skill.url)} is not a URL any client can resolve`);
+          return;
+        }
+        // The RFC allows a skill hosted anywhere. This tree can only hash a
+        // file it holds, so an off-origin artifact is a digest nothing checks.
+        if (artifact.origin !== SITE_ORIGIN) {
+          bad(`${label} url resolves to ${artifact.origin} — the digest can only be checked against a file in this tree, so the artifact has to be served from ${SITE_ORIGIN}`);
+          return;
+        }
+        const file = checkLocal(label, artifact.pathname);
+        if (file === undefined) return;
+        let bytes;
+        try {
+          bytes = fs.readFileSync(file);
+        } catch (error) {
+          bad(`${label} url ${artifact.pathname} does not name a readable file (${messageOf(error)})`);
+          return;
+        }
+        // Over the raw bytes, exactly as the RFC defines it and exactly as they
+        // are served: .gitattributes pins LF, and Cloudflare serves the file
+        // untouched. One comparison covers a stale hash and a malformed one
+        // alike — neither can equal this — and the message carries the value to
+        // paste, so the fix is a copy rather than a command to remember.
+        const digest = `sha256:${crypto.createHash('sha256').update(bytes).digest('hex')}`;
+        if (skill.digest !== digest) {
+          bad(`${label} digest is ${JSON.stringify(skill.digest)} but ${artifact.pathname} hashes to "${digest}" — a client that verifies the digest (the RFC makes it a MUST) rejects the skill, so update the index in the same commit as the file`);
+        }
+
+        // The SKILL.md's own frontmatter states the name and description a
+        // second time, and that copy is the one an agent keeps once the skill
+        // is installed. Compared as plain text, like the description under
+        // index.md's H1: keep the YAML values unquoted rather than teaching
+        // this to parse YAML.
+        const skillMd = bytes.toString('utf8');
+        const frontmatter = /^---\n([\s\S]*?)\n---\n/.exec(skillMd);
+        if (!frontmatter) {
+          bad(`${artifact.pathname} does not open with a YAML frontmatter block ("---" on the first line) — a SKILL.md with no name and description is not a skill a client can load`);
+          return;
+        }
+        const field = (key: string) => new RegExp(`^${key}:[ \\t]*(.*?)[ \\t]*$`, 'm').exec(frontmatter[1])?.[1];
+        if (field('name') !== name) {
+          bad(`${artifact.pathname} frontmatter name ${JSON.stringify(field('name'))} disagrees with ${JSON.stringify(name)} in ${SKILLS_INDEX}`);
+        }
+        if (field('description') !== description) {
+          bad(`${artifact.pathname} frontmatter description disagrees with the one in ${SKILLS_INDEX} — the same sentence is written twice and one copy has drifted (keep it a plain, unquoted YAML value)`);
+        }
+
+        // Every URL in the skill that lands on this origin, fenced examples
+        // included: unlike llms.txt above, a URL in a code block here is not
+        // documentation of a request, it is the request the agent will make.
+        // The MCP endpoint is a Worker route with no file behind it, so it is
+        // named rather than left to pass because a directory shares its path.
+        for (const [reference] of skillMd.matchAll(/https?:\/\/[^\s)<>"'`]+/g)) {
+          const local = sameOriginPath(reference);
+          if (local === undefined || local === '/' || reference === MCP_ENDPOINT) continue;
+          checkLocal(artifact.pathname, local);
+        }
+
+        // A skill that documents the MCP server restates what src/mcp.mts
+        // exports, and the server card check above only keeps the card in step.
+        if (skillMd.includes(MCP_ENDPOINT)) {
+          if (protocolVersion && !skillMd.includes(`\`${protocolVersion}\``)) {
+            bad(`${artifact.pathname} documents ${MCP_ENDPOINT} without naming \`${protocolVersion}\`, the only protocol revision src/mcp.mts implements`);
+          }
+          for (const tool of exportedTools) {
+            if (!skillMd.includes(`\`${tool}\``)) {
+              bad(`${artifact.pathname} documents ${MCP_ENDPOINT} without naming \`${tool}\`, a tool src/mcp.mts exports — the skill has fallen behind the server`);
+            }
+          }
+        }
+      });
+    }
+  }
+}
+
 
 // --- /auth.md discovery: agent tooling finds this document by fetching
 // /auth.md and matching an H1 that contains "auth.md". Both the file and the
@@ -1104,4 +1258,4 @@ if (errors.length > 0) {
   for (const message of errors) console.error(`  - ${message}`);
   process.exit(1);
 }
-console.log('✓ site invariants hold (CSP parity + coverage, id contract, file references, JSON-LD, auth.md discovery, markdown twin, llms.txt index, API catalog, ARD manifest, MCP server card, _headers overlap, / stays uncacheable, _redirects syntax)');
+console.log('✓ site invariants hold (CSP parity + coverage, id contract, file references, JSON-LD, auth.md discovery, markdown twin, llms.txt index, API catalog, ARD manifest, MCP server card, agent skills index, _headers overlap, / stays uncacheable, _redirects syntax)');

@@ -111,6 +111,27 @@ at the card, which is the discovery path SEP-2127 specifies.
 node --test src/mcp.test.mts
 ```
 
+### Agent skills
+
+`/.well-known/agent-skills/index.json` is an
+[Agent Skills discovery index](https://github.com/cloudflare/agent-skills-discovery-rfc)
+(v0.2.0) listing one skill, `jaredsburrows-talks`: how to look up the talks
+through the JSON, the MCP server or the Markdown homepage. The skill itself is
+`.well-known/agent-skills/jaredsburrows-talks/SKILL.md`.
+
+The index carries a SHA-256 of that file, and a client must reject a skill whose
+bytes do not match it — so **any edit to the `SKILL.md` needs the digest updated
+in the same commit**. `validate-site.ts` recomputes it and prints the value to
+paste when the two disagree, or:
+
+```
+shasum -a 256 .well-known/agent-skills/jaredsburrows-talks/SKILL.md
+```
+
+The same check fails the build if the skill's frontmatter stops matching the
+index, if a URL in it stops naming a file here, or if it stops naming a tool or
+the protocol revision `src/mcp.mts` exports.
+
 ### The Worker
 
 `src/worker.mts` is the server code on this site. `_headers` and

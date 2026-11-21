@@ -1165,5 +1165,158 @@ testFiles('a manifest entry with the wrong media type fails the build',
   1, 'application/mcp-server-card+json');
 
 
+// --- Agent Skills discovery index. The index holds a SHA-256 of the SKILL.md
+// it lists, and a conforming client rejects a skill whose bytes do not match —
+// so the realistic regression is not a broken index but a perfectly valid one
+// sitting beside a file somebody has since reworded. Nothing renders either
+// file and both stay well-formed, which is why the first case below is the one
+// this whole block exists for.
+const crypto: typeof import('crypto') = require('crypto');
+const SKILLS_INDEX = '.well-known/agent-skills/index.json';
+const originalSkillsIndex = fs.readFileSync(path.join(repoRoot, SKILLS_INDEX), 'utf8');
+const SKILL_URL: string = JSON.parse(originalSkillsIndex).skills[0].url;
+const SKILL_MD = SKILL_URL.replace(/^\//, '');
+const originalSkillMd = fs.readFileSync(path.join(repoRoot, SKILL_MD), 'utf8');
+const sha256 = (text: string) => `sha256:${crypto.createHash('sha256').update(text).digest('hex')}`;
+assert.strictEqual(JSON.parse(originalSkillsIndex).skills.length, 1,
+  `fixture assumption broken: ${SKILLS_INDEX} no longer lists exactly one skill`);
+for (const expected of ['https://jaredsburrows.com/mcp\n', '`get_talk`', 'https://jaredsburrows.com/api/openapi.json']) {
+  assert.ok(originalSkillMd.includes(expected),
+    `fixture assumption broken: ${SKILL_MD} no longer contains ${JSON.stringify(expected)}`);
+}
+
+/** The index, with `mutate` applied to its parsed form. */
+const withSkillsIndex = (mutate: (index: any) => void): Record<string, string> => {
+  const index = JSON.parse(originalSkillsIndex);
+  mutate(index);
+  return { [SKILLS_INDEX]: `${JSON.stringify(index, null, 2)}\n` };
+};
+
+// An edited SKILL.md with the index digest brought along. Every check that
+// runs after the digest comparison needs this, or it fails on the digest
+// instead of on the invariant it meant to test.
+const withSkillMd = (text: string): Record<string, string> => ({
+  [SKILL_MD]: text,
+  ...withSkillsIndex((index) => { index.skills[0].digest = sha256(text); }),
+});
+
+const REWORDED_SKILL = originalSkillMd.replace('Quote the abstracts as written.', 'Quote the abstracts verbatim.');
+assert.notStrictEqual(REWORDED_SKILL, originalSkillMd, `fixture assumption broken: ${SKILL_MD} lost the sentence this fixture rewords`);
+
+testFiles('a SKILL.md edited without updating the index digest fails, and names the digest to paste',
+  { [SKILL_MD]: REWORDED_SKILL },
+  1, ['hashes to', sha256(REWORDED_SKILL)]);
+
+testFiles('the same edit with the digest updated passes',
+  withSkillMd(REWORDED_SKILL), 0);
+
+testFiles('a digest in upper-case hex fails closed',
+  withSkillsIndex((index) => { index.skills[0].digest = index.skills[0].digest.toUpperCase().replace('SHA256', 'sha256'); }),
+  1, 'hashes to');
+
+testFiles('a missing skills index fails the build',
+  { [SKILLS_INDEX]: null },
+  1, `${SKILLS_INDEX} is missing`);
+
+testFiles('a skills index that is not valid JSON fails the build',
+  { [SKILLS_INDEX]: originalSkillsIndex.replace(/\}\s*$/, '') },
+  1, `${SKILLS_INDEX} is not valid JSON`);
+
+testFiles('a skills index that is valid JSON but not an object fails the build',
+  { [SKILLS_INDEX]: 'null\n' },
+  1, 'is not a JSON object');
+
+testFiles('an unrecognised $schema fails the build',
+  withSkillsIndex((index) => { index.$schema = 'https://schemas.agentskills.io/discovery/0.1.0/schema.json'; }),
+  1, 'skip an index they do not recognise');
+
+testFiles('an index listing no skills fails the build',
+  withSkillsIndex((index) => { index.skills = []; }),
+  1, 'advertises no skill at all');
+
+testFiles('a skill name outside the naming rule fails the build',
+  withSkillsIndex((index) => { index.skills[0].name = 'Jared_Burrows-Talks'; }),
+  1, 'a skill name is 1-64 characters');
+
+testFiles('a skill name with a doubled hyphen fails the build',
+  withSkillsIndex((index) => { index.skills[0].name = 'jaredsburrows--talks'; }),
+  1, 'a skill name is 1-64 characters');
+
+testFiles('the same skill listed twice fails the build',
+  withSkillsIndex((index) => { index.skills.push({ ...index.skills[0] }); }),
+  1, 'repeats the name');
+
+testFiles('an archive entry fails closed, because nothing here can read inside one',
+  withSkillsIndex((index) => { index.skills[0].type = 'archive'; }),
+  1, 'only "skill-md" is checked here');
+
+testFiles('a description past the 1024-character limit fails the build',
+  withSkillsIndex((index) => { index.skills[0].description = 'x'.repeat(1025); }),
+  1, 'needs a description of 1-1024 characters');
+
+testFiles('a skill entry with no url fails the build',
+  withSkillsIndex((index) => { delete index.skills[0].url; }),
+  1, 'has no url');
+
+testFiles('a skill hosted on another origin fails closed, because its digest cannot be checked',
+  withSkillsIndex((index) => { index.skills[0].url = `https://cdn.example.com${SKILL_URL}`; }),
+  1, 'the digest can only be checked against a file in this tree');
+
+testFiles('a skill url naming a file that does not exist fails the build',
+  withSkillsIndex((index) => { index.skills[0].url = '/.well-known/agent-skills/renamed/SKILL.md'; }),
+  1, 'references missing file /.well-known/agent-skills/renamed/SKILL.md');
+
+// Resolved through the URL parser first, as a client resolves it: the dot
+// segments collapse and what is left is a path this tree does not have.
+testFiles('a skill url that walks out of the site with .. fails closed',
+  withSkillsIndex((index) => { index.skills[0].url = TRAVERSAL; }),
+  1, `references missing file ${ESCAPE_TARGET}`);
+
+testFiles('a skill url with a percent-encoded traversal fails closed',
+  withSkillsIndex((index) => { index.skills[0].url = ENCODED_TRAVERSAL; }),
+  1, 'escapes the site root');
+
+// RFC 3986 resolution against the index URL, which is what the RFC specifies:
+// a relative url names the same file, so it has to pass rather than be read as
+// a path from the site root.
+testFiles('a url relative to the index resolves to the same file and passes',
+  withSkillsIndex((index) => { index.skills[0].url = SKILL_URL.replace('/.well-known/agent-skills/', ''); }),
+  0);
+
+testFiles('a SKILL.md whose frontmatter name disagrees with the index fails the build',
+  withSkillMd(originalSkillMd.replace(/^name: .*$/m, 'name: talks')),
+  1, 'frontmatter name "talks" disagrees');
+
+testFiles('a SKILL.md whose frontmatter description has drifted from the index fails the build',
+  withSkillMd(originalSkillMd.replace(/^description: /m, 'description: In short: ')),
+  1, 'frontmatter description disagrees');
+
+testFiles('a SKILL.md with no frontmatter fails the build',
+  withSkillMd(originalSkillMd.replace(/^---\n[\s\S]*?\n---\n/, '')),
+  1, 'does not open with a YAML frontmatter block');
+
+// URLs in fenced blocks count here, unlike in llms.txt: they are the requests
+// the agent goes on to make.
+testFiles('a skill pointing at a file this site no longer serves fails the build',
+  withSkillMd(originalSkillMd.replace('https://jaredsburrows.com/api/openapi.json', 'https://jaredsburrows.com/api/openapi-v2.json')),
+  1, 'references missing file /api/openapi-v2.json');
+
+testFiles('a skill telling agents to fetch a missing endpoint from a code block fails the build',
+  withSkillMd(originalSkillMd.replace('GET https://jaredsburrows.com/api/talks.json', 'GET https://jaredsburrows.com/api/v2/talks.json')),
+  1, 'references missing file /api/v2/talks.json');
+
+testFiles('renaming a tool in the server without updating the skill fails the build',
+  { 'src/mcp.mts': originalMcpSource.replace("name: 'get_talk',", "name: 'fetch_talk',") },
+  1, 'without naming `fetch_talk`');
+
+testFiles('a skill that stops naming a tool the server exports fails the build',
+  withSkillMd(originalSkillMd.split('`get_talk`').join('the second tool')),
+  1, 'without naming `get_talk`');
+
+testFiles('a protocol revision the skill does not name fails the build',
+  { 'src/mcp.mts': originalMcpSource.replace("PROTOCOL_VERSION = '2026-07-28'", "PROTOCOL_VERSION = '2099-01-01'") },
+  1, 'without naming `2099-01-01`');
+
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

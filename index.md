@@ -53,6 +53,8 @@ Gradle Summit — Palo Alto, CA, USA — 2017-06-22.
 - Everything this site offers an agent, in one manifest:
   [`/.well-known/ard.json`](/.well-known/ard.json), also served at
   [`/.well-known/ai-catalog.json`](/.well-known/ai-catalog.json).
+- A skill for looking up the talks, in the Agent Skills discovery format:
+  [`/.well-known/agent-skills/index.json`](/.well-known/agent-skills/index.json).
 - Authentication: none, ever. See [`/auth.md`](/auth.md).
 - Crawl and training permissions: [`/robots.txt`](/robots.txt).
 - An index of all of the above, in the llms.txt format:
