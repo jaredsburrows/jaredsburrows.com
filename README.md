@@ -33,8 +33,8 @@ no cache-busting query strings.
 
 ### Browser scripts
 
-`static/js/home.ts` and `static/js/talks.ts` are the sources. `npm run build`
-compiles them to `home.js` and `talks.js` in the same directory, and **those
+`static/js/home.ts`, `static/js/talks.ts` and `static/js/webmcp.ts` are the
+sources. `npm run build` compiles each to the `.js` beside it, and **those
 `.js` files are committed** — `index.html` loads them by path and Cloudflare
 serves this directory as-is, which is also what keeps `index.html` working when
 opened straight from `file://`.
@@ -44,7 +44,7 @@ both. CI rebuilds and fails if the committed output disagrees with its source, s
 a forgotten build cannot ship the previous JavaScript behind a correct-looking
 diff.
 
-Compiling is the whole reason these two are the exception: the comments in the
+Compiling is the whole reason these files are the exception: the comments in the
 sources would otherwise be downloaded by every visitor, since this file is not
 minified. Stripping them saves about 1.4 KB gzipped on `home.js`.
 
@@ -109,6 +109,24 @@ at the card, which is the discovery path SEP-2127 specifies.
 
 ```
 node --test src/mcp.test.mts
+```
+
+### WebMCP
+
+`static/js/webmcp.ts` registers the MCP server's two tools, `list_talks` and
+`get_talk`, with the browser through [WebMCP](https://webmachinelearning.github.io/webmcp/)
+(`document.modelContext.registerTool()`), so an agent driving the tab can ask
+for the talks instead of scraping the accordion. They answer from the
+`window.TALKS` the page already loaded: no request, no Worker invocation. In a
+browser without the API the script returns on its first line.
+
+A browser script cannot import `src/mcp.mts`, so the tool definitions exist
+twice. `src/mcp.mts` is the one to edit; `.github/webmcp.test.mts` mounts the
+homepage, records what it registers, and fails until each tool is described and
+answers exactly as the server's does.
+
+```
+npm run build && node --test .github/webmcp.test.mts
 ```
 
 ### Agent skills

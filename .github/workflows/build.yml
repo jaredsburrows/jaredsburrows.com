@@ -120,6 +120,13 @@ jobs:
       - name: Test the talk embeds
         run: node --test .github/embed-referrerpolicy.test.mts
 
+      # The homepage registers the talks as WebMCP tools, written out a second
+      # time because a browser script cannot import the Worker's module. This
+      # mounts the page, records what it registers, and requires each tool to
+      # be described and to answer exactly as src/mcp.mts does.
+      - name: Test the WebMCP tools
+        run: node --test .github/webmcp.test.mts
+
       # The Worker decides whether / is HTML or Markdown, and getting that wrong
       # in the browser direction would serve a page with no HTML in it to every
       # visitor and to Googlebot. No deploy can tell you that; this truth table can.

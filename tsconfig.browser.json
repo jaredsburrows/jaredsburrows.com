@@ -1,4 +1,4 @@
-// The two scripts the browser downloads -- and the only thing in this repo that
+// The scripts the browser downloads -- and the only thing in this repo that
 // EMITS. Everything else is noEmit.
 //
 // static/js/*.ts are the sources; `npm run build` compiles them to
