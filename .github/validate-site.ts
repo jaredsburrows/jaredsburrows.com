@@ -45,6 +45,7 @@
 // resolves a bare `require()` to `any` in a .ts file, where it special-cased and
 // typed it in .js: without them `fs.readFileSync` returns `any` and every string
 // derived from a file silently stops being checked.
+const crypto: typeof import('crypto') = require('crypto');
 const fs: typeof import('fs') = require('fs');
 const path: typeof import('path') = require('path');
 const { isDeepStrictEqual }: typeof import('util') = require('util');
@@ -239,8 +240,11 @@ const SITE_ORIGIN = 'https://jaredsburrows.com';
 /**
  * @param source File the reference was found in, for the message.
  * @param reference The href/src as written.
+ * @returns The file the reference resolves to, or undefined when it resolves
+ *   to nothing this site serves — which has then already been reported. Most
+ *   callers only want the report; the agent skills check reads the file.
  */
-const checkLocal = (source: string, reference: string) => {
+const checkLocal = (source: string, reference: string): string | undefined => {
   let url;
   try {
     url = new URL(reference, `${SITE_ORIGIN}/`);
@@ -268,7 +272,9 @@ const checkLocal = (source: string, reference: string) => {
   }
   if (!fs.existsSync(target)) {
     bad(`${source} references missing file ${reference}`);
+    return;
   }
+  return target;
 };
 // An absolute URL back to this origin names a file in this tree just as surely
 // as a relative path does. og:image and twitter:image have to be absolute for
@@ -773,6 +779,324 @@ for (const line of redirects.split('\n')) {
   }
 }
 
+// --- Agent Skills discovery index (Agent Skills Discovery RFC v0.2.0). The
+// index at /.well-known/agent-skills/index.json lists each skill this origin
+// publishes, with a SHA-256 of the file it points at, and the RFC makes
+// verifying that digest a client MUST: on a mismatch the skill is rejected
+// outright. So this is the one discovery document here that an edit to ANOTHER
+// file breaks. Reword one sentence of a SKILL.md and the digest beside it is
+// wrong, the JSON is still valid, nothing renders either file, and every
+// conforming client silently stops loading the skill. A hand-copied hash is a
+// second copy of the file's contents, and a second copy only stays true if
+// something recomputes it — this does.
+//
+// The skill restates facts the rest of the tree owns (the tool names and the
+// protocol revision in src/mcp.mts, the URLs of files in this directory), so
+// those are pinned too. An agent that loads a skill does exactly what it says,
+// and a skill that names a renamed tool sends it to call something that errors.
+const SKILLS_INDEX = '.well-known/agent-skills/index.json';
+const SKILLS_SCHEMA = 'https://schemas.agentskills.io/discovery/0.2.0/schema.json';
+// The Agent Skills naming rule: 1-64 characters of lowercase letters, digits
+// and hyphens, with no hyphen first, last or doubled.
+const SKILL_NAME = /^(?=.{1,64}$)[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const SKILL_DESCRIPTION_MAX = 1024;
+
+if (!fs.existsSync(path.join(root, SKILLS_INDEX))) {
+  bad(`${SKILLS_INDEX} is missing — it is the one place an agent looks to learn which skills this origin publishes`);
+} else {
+  const skillsIndex = parseJson(SKILLS_INDEX);
+  // `undefined` is parseJson's "already reported". Anything else that is not a
+  // plain object — `null`, an array, a bare string — is valid JSON and still
+  // not an index, and would otherwise fall straight through every check below.
+  if (skillsIndex !== undefined && (skillsIndex === null || typeof skillsIndex !== 'object' || Array.isArray(skillsIndex))) {
+    bad(`${SKILLS_INDEX} is not a JSON object with $schema and skills members`);
+  } else if (skillsIndex !== undefined) {
+    // The $schema URI is an opaque version identifier, and a client that does
+    // not recognise it is told not to process the index at all — so a typo
+    // here hides every skill, not just one.
+    if (skillsIndex.$schema !== SKILLS_SCHEMA) {
+      bad(`${SKILLS_INDEX} has $schema ${JSON.stringify(skillsIndex.$schema)}, but v0.2.0 clients match it against ${SKILLS_SCHEMA} and skip an index they do not recognise`);
+    }
+    if (!Array.isArray(skillsIndex.skills) || skillsIndex.skills.length === 0) {
+      bad(`${SKILLS_INDEX} has no skills array with at least one entry, so it advertises no skill at all`);
+    } else {
+      const listed = new Set<string>();
+      skillsIndex.skills.forEach((skill: any, position: number) => {
+        const label = `${SKILLS_INDEX} skill ${position + 1}`;
+        const name = skill?.name;
+        if (typeof name !== 'string' || !SKILL_NAME.test(name)) {
+          bad(`${label} has name ${JSON.stringify(name)} — a skill name is 1-64 characters of lowercase letters, digits and single hyphens, with no hyphen first or last`);
+        } else if (listed.has(name)) {
+          bad(`${label} repeats the name ${JSON.stringify(name)} — a client keys skills by name, so one of the two is unreachable`);
+        } else {
+          listed.add(name);
+        }
+        // The RFC also defines "archive". It is refused here rather than
+        // waved through: nothing below can read a SKILL.md inside a tarball,
+        // so an archive entry would pass with its contents unchecked. Publish
+        // one by teaching this check to unpack it first.
+        if (skill?.type !== 'skill-md') {
+          bad(`${label} has type ${JSON.stringify(skill?.type)} — only "skill-md" is checked here, and an entry this file cannot read is an entry nothing keeps honest`);
+        }
+        const description = skill?.description;
+        if (typeof description !== 'string' || description.trim() === '' || description.length > SKILL_DESCRIPTION_MAX) {
+          bad(`${label} needs a description of 1-${SKILL_DESCRIPTION_MAX} characters — it is all an agent reads when deciding whether to load the skill`);
+        }
+        if (typeof skill?.url !== 'string') {
+          bad(`${label} has no url, so there is no artifact to fetch`);
+          return;
+        }
+        // Resolved the way a client resolves it (RFC 3986, against the index's
+        // own URL), so a relative url is checked as the file it really names.
+        let artifact;
+        try {
+          artifact = new URL(skill.url, `${SITE_ORIGIN}/${SKILLS_INDEX}`);
+        } catch {
+          bad(`${label} url ${JSON.stringify(skill.url)} is not a URL any client can resolve`);
+          return;
+        }
+        // The RFC allows a skill hosted anywhere. This tree can only hash a
+        // file it holds, so an off-origin artifact is a digest nothing checks.
+        if (artifact.origin !== SITE_ORIGIN) {
+          bad(`${label} url resolves to ${artifact.origin} — the digest can only be checked against a file in this tree, so the artifact has to be served from ${SITE_ORIGIN}`);
+          return;
+        }
+        const file = checkLocal(label, artifact.pathname);
+        if (file === undefined) return;
+        let bytes;
+        try {
+          bytes = fs.readFileSync(file);
+        } catch (error) {
+          bad(`${label} url ${artifact.pathname} does not name a readable file (${messageOf(error)})`);
+          return;
+        }
+        // Over the raw bytes, exactly as the RFC defines it and exactly as they
+        // are served: .gitattributes pins LF, and Cloudflare serves the file
+        // untouched. One comparison covers a stale hash and a malformed one
+        // alike — neither can equal this — and the message carries the value to
+        // paste, so the fix is a copy rather than a command to remember.
+        const digest = `sha256:${crypto.createHash('sha256').update(bytes).digest('hex')}`;
+        if (skill.digest !== digest) {
+          bad(`${label} digest is ${JSON.stringify(skill.digest)} but ${artifact.pathname} hashes to "${digest}" — a client that verifies the digest (the RFC makes it a MUST) rejects the skill, so update the index in the same commit as the file`);
+        }
+
+        // The SKILL.md's own frontmatter states the name and description a
+        // second time, and that copy is the one an agent keeps once the skill
+        // is installed. Compared as plain text, like the description under
+        // index.md's H1: keep the YAML values unquoted rather than teaching
+        // this to parse YAML.
+        const skillMd = bytes.toString('utf8');
+        const frontmatter = /^---\n([\s\S]*?)\n---\n/.exec(skillMd);
+        if (!frontmatter) {
+          bad(`${artifact.pathname} does not open with a YAML frontmatter block ("---" on the first line) — a SKILL.md with no name and description is not a skill a client can load`);
+          return;
+        }
+        const field = (key: string) => new RegExp(`^${key}:[ \\t]*(.*?)[ \\t]*$`, 'm').exec(frontmatter[1])?.[1];
+        if (field('name') !== name) {
+          bad(`${artifact.pathname} frontmatter name ${JSON.stringify(field('name'))} disagrees with ${JSON.stringify(name)} in ${SKILLS_INDEX}`);
+        }
+        if (field('description') !== description) {
+          bad(`${artifact.pathname} frontmatter description disagrees with the one in ${SKILLS_INDEX} — the same sentence is written twice and one copy has drifted (keep it a plain, unquoted YAML value)`);
+        }
+
+        // Every URL in the skill that lands on this origin, fenced examples
+        // included: unlike llms.txt above, a URL in a code block here is not
+        // documentation of a request, it is the request the agent will make.
+        // The MCP endpoint is a Worker route with no file behind it, so it is
+        // named rather than left to pass because a directory shares its path —
+        // and matched as a whole extracted URL, never searched for as a
+        // substring, which would also be satisfied by a longer URL or another
+        // host that merely contains it.
+        let documentsMcp = false;
+        for (const [reference] of skillMd.matchAll(/https?:\/\/[^\s)<>"'`]+/g)) {
+          if (reference === MCP_ENDPOINT) {
+            documentsMcp = true;
+            continue;
+          }
+          const local = sameOriginPath(reference);
+          if (local === undefined || local === '/') continue;
+          checkLocal(artifact.pathname, local);
+        }
+
+        // A skill that documents the MCP server restates what src/mcp.mts
+        // exports, and the server card check above only keeps the card in step.
+        if (documentsMcp) {
+          if (protocolVersion && !skillMd.includes(`\`${protocolVersion}\``)) {
+            bad(`${artifact.pathname} documents ${MCP_ENDPOINT} without naming \`${protocolVersion}\`, the only protocol revision src/mcp.mts implements`);
+          }
+          for (const tool of exportedTools) {
+            if (!skillMd.includes(`\`${tool}\``)) {
+              bad(`${artifact.pathname} documents ${MCP_ENDPOINT} without naming \`${tool}\`, a tool src/mcp.mts exports — the skill has fallen behind the server`);
+            }
+          }
+        }
+      });
+    }
+  }
+}
+
+// --- OAuth metadata: /.well-known/oauth-protected-resource (RFC 9728) and
+// /.well-known/oauth-authorization-server (RFC 8414). This origin protects
+// nothing, and for a long time said so by publishing neither document — a
+// metadata file naming endpoints that do not exist is worse than no file. They
+// are published now on one condition, and this block is that condition: every
+// claim in them has to be TRUE of this tree. The lists of what is supported
+// are empty because nothing is; the endpoints are named because src/oauth.mts
+// answers them; the key set is empty because nothing is signed.
+//
+// Each of those is one plausible edit away from false. "Add a grant type so the
+// document looks complete" turns it from a statement that nothing is on offer
+// into an advertisement for a flow no client can finish, and every file
+// involved stays valid JSON. So the emptiness is asserted, not assumed.
+//
+// The names below avoid the protocol's own on purpose. CodeQL's sensitive-data
+// heuristic reads any identifier containing it as a credential, and would
+// report every message this block prints as a secret written to a log. These
+// are two public documents; nothing here is one.
+const RESOURCE_METADATA = '.well-known/oauth-protected-resource';
+const ISSUER_METADATA = '.well-known/oauth-authorization-server';
+const ENDPOINT_SOURCE = 'src/oauth.mts';
+
+/** Parsed metadata, or undefined once the reason it is unusable has been reported. */
+const metadataDocument = (name: string): Record<string, unknown> | undefined => {
+  if (!fs.existsSync(path.join(root, name))) {
+    bad(`${name} is missing — /auth.md and the other OAuth document both point at it`);
+    return undefined;
+  }
+  const parsed = parseJson(name);
+  if (parsed === undefined) return undefined;
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    bad(`${name} is not a JSON object`);
+    return undefined;
+  }
+  return parsed;
+};
+
+// "Supports nothing" has to be written down. For most of these members an
+// absent key does not mean "none": RFC 8414 reads a missing
+// grant_types_supported as ["authorization_code", "implicit"], and RFC 9728
+// says outright that omitting bearer_methods_supported does not indicate that
+// none are supported. Only an explicit [] says it.
+const requireEmptyList = (name: string, document: Record<string, unknown>, member: string, meaning: string) => {
+  const value = document[member];
+  if (!Array.isArray(value)) {
+    bad(`${name} must state ${member} as an explicit empty array — left out, a client assumes a default rather than "none", and this origin ${meaning}`);
+  } else if (value.length > 0) {
+    bad(`${name} lists ${member} ${JSON.stringify(value)}, but this origin ${meaning} — an entry here advertises something no request can ever use`);
+  }
+};
+
+const resourceMetadata = metadataDocument(RESOURCE_METADATA);
+const issuerMetadata = metadataDocument(ISSUER_METADATA);
+
+// Both RFCs give the client the same instruction (9728 section 3.3, 8414
+// section 3.3): the identifier inside the document must be identical to the one
+// the well-known URL was built from, or the document MUST NOT be used. Both
+// files sit at the root of this origin, so both identifiers are the origin.
+if (resourceMetadata && resourceMetadata.resource !== SITE_ORIGIN) {
+  bad(`${RESOURCE_METADATA} has resource ${JSON.stringify(resourceMetadata.resource)}, but it is served for ${SITE_ORIGIN} — RFC 9728 tells a client to discard metadata whose resource is not the one it asked about`);
+}
+if (issuerMetadata && issuerMetadata.issuer !== SITE_ORIGIN) {
+  bad(`${ISSUER_METADATA} has issuer ${JSON.stringify(issuerMetadata.issuer)}, but it is served for ${SITE_ORIGIN} — RFC 8414 tells a client to discard metadata whose issuer is not the one it asked about`);
+}
+if (resourceMetadata && issuerMetadata && !isDeepStrictEqual(resourceMetadata.authorization_servers, [issuerMetadata.issuer])) {
+  bad(`${RESOURCE_METADATA} lists authorization_servers ${JSON.stringify(resourceMetadata.authorization_servers)}, which is not exactly the issuer in ${ISSUER_METADATA} — the first document sends a client to an authorization server the second does not describe`);
+}
+
+if (resourceMetadata) {
+  requireEmptyList(RESOURCE_METADATA, resourceMetadata, 'scopes_supported', 'has no scopes, because nothing here is protected');
+  requireEmptyList(RESOURCE_METADATA, resourceMetadata, 'bearer_methods_supported', 'reads no bearer token from any request');
+}
+
+// What wrangler.jsonc routes to the Worker. Read from the text, like the
+// constants out of src/mcp.mts above: the file is JSONC, and all that is wanted
+// from it is one array of string literals.
+const workerRoutes = (() => {
+  try {
+    const list = /"run_worker_first"\s*:\s*\[([^\]]*)\]/.exec(read('wrangler.jsonc'));
+    return list ? [...list[1].matchAll(/"([^"]*)"/g)].map((match) => match[1]) : [];
+  } catch {
+    return [];
+  }
+})();
+const endpointSource = (() => {
+  try {
+    return read(ENDPOINT_SOURCE);
+  } catch {
+    return '';
+  }
+})();
+
+if (issuerMetadata) {
+  requireEmptyList(ISSUER_METADATA, issuerMetadata, 'grant_types_supported', 'grants nothing — /oauth/token refuses every request');
+  requireEmptyList(ISSUER_METADATA, issuerMetadata, 'response_types_supported', 'authorizes nothing — /oauth/authorize refuses every request');
+  requireEmptyList(ISSUER_METADATA, issuerMetadata, 'scopes_supported', 'has no scopes, because nothing here is protected');
+
+  // Every endpoint the document names, not just the two it names today: a
+  // registration or revocation endpoint added later is the same claim about a
+  // URL. A static file cannot be one — the asset router answers POST with 405
+  // and has no way to refuse a request in the form OAuth prescribes — so each
+  // must be routed to the Worker and handled by the module that answers them.
+  const endpoints = Object.entries(issuerMetadata).filter(([member]) => member.endsWith('_endpoint'));
+  for (const required of ['authorization_endpoint', 'token_endpoint']) {
+    if (typeof issuerMetadata[required] !== 'string') {
+      bad(`${ISSUER_METADATA} has no ${required} — the document describes an authorization server without saying where it is`);
+    }
+  }
+  for (const [member, value] of endpoints) {
+    const route = typeof value === 'string' ? sameOriginPath(value) : undefined;
+    if (route === undefined) {
+      bad(`${ISSUER_METADATA} ${member} is ${JSON.stringify(value)}, which is not a URL on ${SITE_ORIGIN} — this site can only answer for its own origin`);
+      continue;
+    }
+    if (!workerRoutes.includes(route)) {
+      bad(`${ISSUER_METADATA} names ${member} ${route}, but wrangler.jsonc run_worker_first does not route that path to the Worker — the asset router would answer it with the 404 page`);
+    }
+    if (!endpointSource.includes(`'${route}'`)) {
+      bad(`${ISSUER_METADATA} names ${member} ${route}, but ${ENDPOINT_SOURCE} does not handle that path — the metadata would advertise an endpoint nothing answers`);
+    }
+  }
+
+  // The key set is a file like any other reference, and it has to stay empty
+  // for the same reason the lists do: a key published here is a key some
+  // client will try to verify a token against, and no token exists.
+  const jwksPath = typeof issuerMetadata.jwks_uri === 'string' ? sameOriginPath(issuerMetadata.jwks_uri) : undefined;
+  if (jwksPath === undefined) {
+    bad(`${ISSUER_METADATA} jwks_uri is ${JSON.stringify(issuerMetadata.jwks_uri)}, which is not a URL on ${SITE_ORIGIN}`);
+  } else if (checkLocal(ISSUER_METADATA, jwksPath) !== undefined) {
+    const jwksName = jwksPath.replace(/^\//, '');
+    const jwks = parseJson(jwksName);
+    if (jwks !== undefined && !(Array.isArray(jwks?.keys) && jwks.keys.length === 0)) {
+      bad(`${jwksName} must be exactly an empty key set ({"keys": []}) — this origin signs nothing, so a key published here verifies nothing`);
+    }
+  }
+}
+
+// Both documents point a reader at the prose that explains them.
+for (const [name, document, member] of [
+  [RESOURCE_METADATA, resourceMetadata, 'resource_documentation'],
+  [ISSUER_METADATA, issuerMetadata, 'service_documentation'],
+] as const) {
+  const link = document?.[member];
+  if (!document) continue;
+  const reference = typeof link === 'string' ? sameOriginPath(link) : undefined;
+  if (reference === undefined) {
+    bad(`${name} ${member} is ${JSON.stringify(link)} — it should link the document that says why every list here is empty (/auth.md)`);
+  } else {
+    checkLocal(name, reference);
+  }
+}
+
+// Neither well-known path has an extension, so Cloudflare infers no type and
+// the response goes out with no Content-Type at all (measured for the server
+// card above). Both RFCs make application/json a MUST.
+for (const name of [RESOURCE_METADATA, ISSUER_METADATA]) {
+  const rule = headerRuleValues(`/${name}`);
+  if (!rule?.some((line) => /^Content-Type:\s*application\/json\b/i.test(line))) {
+    bad(`_headers does not set Content-Type: application/json on /${name} — the path has no extension, so without the rule it is served with no type at all`);
+  }
+}
+
 
 // --- /auth.md discovery: agent tooling finds this document by fetching
 // /auth.md and matching an H1 that contains "auth.md". Both the file and the
@@ -1134,4 +1458,4 @@ if (errors.length > 0) {
   for (const message of errors) console.error(`  - ${message}`);
   process.exit(1);
 }
-console.log('✓ site invariants hold (CSP parity + coverage, id contract, file references, JSON-LD, auth.md discovery, markdown twin, llms.txt index, API catalog, ARD manifest, MCP server card, _headers overlap, / stays uncacheable, _redirects syntax)');
+console.log('✓ site invariants hold (CSP parity + coverage, id contract, file references, JSON-LD, auth.md discovery, markdown twin, llms.txt index, API catalog, ARD manifest, MCP server card, agent skills index, OAuth metadata, _headers overlap, / stays uncacheable, _redirects syntax)');

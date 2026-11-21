@@ -76,6 +76,31 @@
 /.well-known/ard.json
   Access-Control-Allow-Origin: *
 
+# Agent Skills discovery index and the SKILL.md it lists (Agent Skills Discovery
+# RFC v0.2.0). No Content-Type rule: .json and .md infer application/json and
+# text/markdown, which are the types the RFC asks for. Access-Control-Allow-
+# Origin is the RFC's SHOULD for browser-based clients, and /* does not set it,
+# so nothing joins. No Cache-Control either, on purpose: the index carries a
+# SHA-256 of the SKILL.md and a client must reject a skill whose bytes do not
+# match it, so two files on separate TTLs could be held across a deploy as an
+# old index beside a new skill. Left revalidating, the pair always comes from
+# one deploy.
+/.well-known/agent-skills/*
+  Access-Control-Allow-Origin: *
+
+# OAuth metadata: RFC 9728 for the resource, RFC 8414 for the authorization
+# server. Neither well-known path has an extension, so like the api-catalog
+# above Cloudflare infers no type for them at all, and both RFCs make
+# application/json a MUST — these rules are the only thing that sets it.
+# Access-Control-Allow-Origin so a browser-based agent can read them.
+/.well-known/oauth-protected-resource
+  Content-Type: application/json
+  Access-Control-Allow-Origin: *
+
+/.well-known/oauth-authorization-server
+  Content-Type: application/json
+  Access-Control-Allow-Origin: *
+
 # MCP server card, published at three paths. /mcp/server-card is the location
 # SEP-2127 reserves (<streamable-http-url>/server-card); the two .well-known
 # copies are what today's scanners probe, and SEP-2127 explicitly declined to

@@ -67,9 +67,12 @@
     <meta name="theme-color" content="#121211" media="(prefers-color-scheme: dark)">
     <meta name="theme-color" content="#faf9f7" media="(prefers-color-scheme: light)">
     <!-- Deferred: fetched in parallel with the page, run in order after parse
-         (talks.js defines window.TALKS for home.js). -->
+         (talks.js defines window.TALKS for the two that follow). webmcp.js
+         registers the talks as WebMCP tools for an agent driving this tab, and
+         does nothing in a browser without document.modelContext. -->
     <script src="static/js/talks.js" defer></script>
     <script src="static/js/home.js" defer></script>
+    <script src="static/js/webmcp.js" defer></script>
 
     <!-- Schema Meta Data - https://Schema.org/ -->
     <!-- Top-level Person. ProfilePage was considered and rejected on

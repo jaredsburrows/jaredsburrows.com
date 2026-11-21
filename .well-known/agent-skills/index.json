@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schemas.agentskills.io/discovery/0.2.0/schema.json",
+  "skills": [
+    {
+      "name": "jaredsburrows-talks",
+      "type": "skill-md",
+      "description": "Look up the conference talks Jared Burrows has given, with their dates, venues, abstracts, slides and video, from jaredsburrows.com. Use when asked which talks he has given, or for the slides, recording or abstract of one of them.",
+      "url": "/.well-known/agent-skills/jaredsburrows-talks/SKILL.md",
+      "digest": "sha256:b29f0685b9a85964820d9b71994e080652cb872d3a05f456224c6c350aaddb97"
+    }
+  ]
+}

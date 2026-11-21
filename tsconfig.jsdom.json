@@ -28,6 +28,14 @@
     "module": "nodenext",
     "moduleResolution": "nodenext",
 
+    // webmcp.test.mts imports '../src/mcp.mts' by its real filename, to compare
+    // the tools the page registers against the ones the server exports. Same
+    // reason, and the same noEmit pairing, as in tsconfig.json. It does pull
+    // src/mcp.mts into this program, where it is checked a second time against
+    // the DOM's `Request` and `Response` — harmless, since it uses only what
+    // both libraries declare.
+    "allowImportingTsExtensions": true,
+
     "target": "es2023",
     "lib": ["es2023", "dom", "dom.iterable"],
 

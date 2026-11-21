@@ -1,0 +1,8 @@
+{
+  "resource": "https://jaredsburrows.com",
+  "authorization_servers": ["https://jaredsburrows.com"],
+  "scopes_supported": [],
+  "bearer_methods_supported": [],
+  "resource_name": "jaredsburrows.com",
+  "resource_documentation": "https://jaredsburrows.com/auth.md"
+}

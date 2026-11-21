@@ -26,11 +26,15 @@ authentication, no user data and no write surface.
 - [Agent manifest](https://jaredsburrows.com/.well-known/ard.json): everything
   this origin offers an agent, in one file. Served byte-identically at
   [/.well-known/ai-catalog.json](https://jaredsburrows.com/.well-known/ai-catalog.json).
+- [Agent skills](https://jaredsburrows.com/.well-known/agent-skills/index.json):
+  the discovery index for the one skill this origin publishes — how to look up
+  the talks — with a SHA-256 digest of the file it points at.
 
 ## Policies
 
-- [Authentication](https://jaredsburrows.com/auth.md): none, ever. No issuer, no
-  protected resources, and no registration route worth probing for.
+- [Authentication](https://jaredsburrows.com/auth.md): none, ever. Nothing here
+  takes a token, and the OAuth metadata this origin publishes says so in OAuth's
+  own terms: no grant types, no scopes, no bearer methods.
 - [Crawl and training permissions](https://jaredsburrows.com/robots.txt):
   `ai-train=yes, search=yes, ai-input=yes` for every user agent, with nothing
   disallowed.

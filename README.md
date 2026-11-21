@@ -6,7 +6,7 @@ My blog, presentations, GitHub, and social links.
 [![Build](https://github.com/jaredsburrows/jaredsburrows.com/workflows/build/badge.svg)](https://github.com/jaredsburrows/jaredsburrows.com/actions)
 [![Twitter Follow](https://img.shields.io/twitter/follow/jaredsburrows.svg?style=social)](https://twitter.com/jaredsburrows)
 
-Personal website. Cloudflare Workers serves the repo from its edge; two routes, `/` and `/mcp`, also run `src/worker.mts` (see "The Worker"). Everything served is a file committed here — the only compiled output is `static/js/*.js`, built from the `.ts` beside it and committed too (see "Browser scripts").
+Personal website. Cloudflare Workers serves the repo from its edge; four routes — `/`, `/mcp`, `/oauth/authorize` and `/oauth/token` — also run `src/worker.mts` (see "The Worker"). Everything served is a file committed here — the only compiled output is `static/js/*.js`, built from the `.ts` beside it and committed too (see "Browser scripts").
 
 ### Preview the website
 
@@ -33,8 +33,8 @@ no cache-busting query strings.
 
 ### Browser scripts
 
-`static/js/home.ts` and `static/js/talks.ts` are the sources. `npm run build`
-compiles them to `home.js` and `talks.js` in the same directory, and **those
+`static/js/home.ts`, `static/js/talks.ts` and `static/js/webmcp.ts` are the
+sources. `npm run build` compiles each to the `.js` beside it, and **those
 `.js` files are committed** — `index.html` loads them by path and Cloudflare
 serves this directory as-is, which is also what keeps `index.html` working when
 opened straight from `file://`.
@@ -44,7 +44,7 @@ both. CI rebuilds and fails if the committed output disagrees with its source, s
 a forgotten build cannot ship the previous JavaScript behind a correct-looking
 diff.
 
-Compiling is the whole reason these two are the exception: the comments in the
+Compiling is the whole reason these files are the exception: the comments in the
 sources would otherwise be downloaded by every visitor, since this file is not
 minified. Stripping them saves about 1.4 KB gzipped on `home.js`.
 
@@ -111,6 +111,71 @@ at the card, which is the discovery path SEP-2127 specifies.
 node --test src/mcp.test.mts
 ```
 
+### WebMCP
+
+`static/js/webmcp.ts` registers the MCP server's two tools, `list_talks` and
+`get_talk`, with the browser through [WebMCP](https://webmachinelearning.github.io/webmcp/)
+(`document.modelContext.registerTool()`), so an agent driving the tab can ask
+for the talks instead of scraping the accordion. They answer from the
+`window.TALKS` the page already loaded: no request, no Worker invocation. In a
+browser without the API the script returns on its first line.
+
+A browser script cannot import `src/mcp.mts`, so the tool definitions exist
+twice. `src/mcp.mts` is the one to edit; `.github/webmcp.test.mts` mounts the
+homepage, records what it registers, and fails until each tool is described and
+answers exactly as the server's does.
+
+```
+npm run build && node --test .github/webmcp.test.mts
+```
+
+### Agent skills
+
+`/.well-known/agent-skills/index.json` is an
+[Agent Skills discovery index](https://github.com/cloudflare/agent-skills-discovery-rfc)
+(v0.2.0) listing one skill, `jaredsburrows-talks`: how to look up the talks
+through the JSON, the MCP server or the Markdown homepage. The skill itself is
+`.well-known/agent-skills/jaredsburrows-talks/SKILL.md`.
+
+The index carries a SHA-256 of that file, and a client must reject a skill whose
+bytes do not match it — so **any edit to the `SKILL.md` needs the digest updated
+in the same commit**. `validate-site.ts` recomputes it and prints the value to
+paste when the two disagree, or:
+
+```
+shasum -a 256 .well-known/agent-skills/jaredsburrows-talks/SKILL.md
+```
+
+The same check fails the build if the skill's frontmatter stops matching the
+index, if a URL in it stops naming a file here, or if it stops naming a tool or
+the protocol revision `src/mcp.mts` exports.
+
+### OAuth metadata
+
+Nothing here needs a token, and the OAuth metadata is how the site says so to a
+client that asks in OAuth. `/.well-known/oauth-protected-resource`
+([RFC 9728](https://www.rfc-editor.org/rfc/rfc9728)) names this origin as the
+resource and lists no scopes and no bearer methods.
+`/.well-known/oauth-authorization-server`
+([RFC 8414](https://www.rfc-editor.org/rfc/rfc8414)) lists no grant types and no
+response types, and `/oauth/jwks.json` is an empty key set.
+
+A document that names an authorization endpoint and a token endpoint is making a
+claim about two URLs, so both exist: `src/oauth.mts` answers `/oauth/authorize`
+with a refusal that never redirects and `/oauth/token` with
+`unsupported_grant_type`, each pointing at `/auth.md`. Neither reads its input,
+keeps state or holds a secret.
+
+**The empty lists are the point, not a placeholder.** Adding a grant type, a
+scope or a key advertises a flow this site does not implement, and
+`validate-site.ts` fails the build if any of them stops being empty, if the two
+documents disagree about the issuer, or if an endpoint in the metadata is not
+one the Worker is routed for.
+
+```
+node --test src/oauth.test.mts
+```
+
 ### The Worker
 
 `src/worker.mts` is the server code on this site. `_headers` and
@@ -127,10 +192,11 @@ that already holds the Markdown homepage gets a 304 rather than the document
 again. The two carry different ETags, so neither one's validator can ever
 produce a 304 for the other.
 
-`assets.run_worker_first: ["/", "/mcp"]` in `wrangler.jsonc` scopes it to those
-two paths, and `assets.binding` is what gives it `env.ASSETS.fetch`. Both are
-exact matches, so `/mcp` does not capture `/mcp/server-card` — the card stays a
-static asset. Every other path is matched by Cloudflare's asset router before
+`assets.run_worker_first` in `wrangler.jsonc` scopes it to four paths — `/`,
+`/mcp`, and the two OAuth endpoints (see "OAuth metadata") — and
+`assets.binding` is what gives it `env.ASSETS.fetch`. All four are exact
+matches, so `/mcp` does not capture `/mcp/server-card` and `/oauth/token` does
+not capture `/oauth/jwks.json` — both stay static assets. Every other path is matched by Cloudflare's asset router before
 any code runs, so those requests are neither slowed down nor billed as Worker
 invocations.
 

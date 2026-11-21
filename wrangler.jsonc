@@ -17,11 +17,14 @@
     // the Worker reads /index.md and how everything it does not negotiate is
     // served: without this the script has no way to reach the files at all.
     "binding": "ASSETS",
-    // Exactly two route-first patterns, both exact matches. Broadening either
-    // (or setting this to true) would put every request for every asset through
-    // a billed invocation. "/mcp" does not capture "/mcp/server-card": the card
-    // is a static asset, checked under `wrangler dev`.
-    "run_worker_first": ["/", "/mcp"]
+    // Four route-first patterns, all exact matches. Broadening any of them (or
+    // setting this to true) would put every request for every asset through a
+    // billed invocation. "/mcp" does not capture "/mcp/server-card": the card
+    // is a static asset, checked under `wrangler dev`. The two "/oauth/" paths
+    // are the endpoints /.well-known/oauth-authorization-server names, and
+    // validate-site.ts fails the build if that document and this list disagree;
+    // "/oauth/jwks.json" beside them is a static asset and stays one.
+    "run_worker_first": ["/", "/mcp", "/oauth/authorize", "/oauth/token"]
   },
   // Observability on, as #139 set it. Both switches have to say so: wrangler's
   // normalizeObservability only fills fields that are `undefined` and the deploy

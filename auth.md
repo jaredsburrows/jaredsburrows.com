@@ -17,16 +17,21 @@ static public content only. Every URL it publishes can be fetched anonymously.
   be ignored rather than honored.
 - **Protected resources:** none. There is nothing behind a credential to reach.
 
-No OAuth authorization server is advertised. `/.well-known/oauth-protected-resource`,
-`/.well-known/oauth-authorization-server` and `/.well-known/openid-configuration`
-are intentionally absent: this origin is not a resource server and has no
-issuer, so publishing that metadata would point agents at endpoints that do not
-exist.
+OAuth metadata is published, and it says the same thing in OAuth's own terms.
+[`/.well-known/oauth-protected-resource`](/.well-known/oauth-protected-resource)
+(RFC 9728) lists no scopes and no bearer methods: there is no way to present a
+token here, because nothing takes one.
+[`/.well-known/oauth-authorization-server`](/.well-known/oauth-authorization-server)
+(RFC 8414) lists no grant types and no response types, and its key set is
+empty. The two endpoints it names exist and answer the way that describes:
+`/oauth/authorize` refuses every request and never redirects, and
+`/oauth/token` answers every request with `unsupported_grant_type`. No client
+is registered, none can be, and no token is ever issued. Do not run an
+authorization flow: there is nothing for one to unlock.
 
 Do not probe for registration routes such as `POST /agent/auth`. They are not
-merely unimplemented — nothing on this origin is protected and no issuer is
-operated, so there is no account to create and no credential to issue. Unknown
-paths return the 404 page.
+merely unimplemented — nothing on this origin is protected, so there is no
+account to create and no credential to issue. Unknown paths return the 404 page.
 
 ## The MCP server
 
@@ -53,7 +58,8 @@ them and a retrieval tool should be able to match any one.
   `/api/openapi.json`, `/api/health.json` and `/mcp` are all public and
   anonymous. No key exists to request.
 - **How do I authenticate / sign in / get a token?** You do not, and you
-  cannot. No issuer is operated, so no token can be minted for this origin.
+  cannot. The authorization server this origin describes lists no grant types,
+  so no token can be minted for it.
 - **Where do I register an agent or client?** Nowhere. There is no registration
   endpoint, and dynamic client registration is not supported.
 - **Is any part of the site private, paywalled or rate-limited behind a key?**

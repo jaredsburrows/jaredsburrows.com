@@ -369,6 +369,33 @@ test('/mcp/server-card is not captured by the /mcp route', async () => {
     'the card is a static asset — run_worker_first is exact-match on /mcp');
 });
 
+test('the two OAuth endpoints are answered by the Worker, not the asset router', async () => {
+  const env = homepage();
+  const authorize = await worker.fetch(new Request(
+    'https://jaredsburrows.com/oauth/authorize?response_type=code&redirect_uri=https%3A%2F%2Fevil.example'), env);
+  assert.equal(authorize.status, 400, 'the refusal, not a 404 from the assets stub');
+  assert.equal(authorize.headers.get('location'), null);
+
+  const token = await worker.fetch(new Request('https://jaredsburrows.com/oauth/token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: 'grant_type=client_credentials',
+  }), env);
+  assert.equal(token.status, 400);
+  assert.equal((await token.json() as { error: string }).error, 'unsupported_grant_type');
+  assert.equal(env.requests.length, 0, 'neither endpoint may reach the asset router');
+});
+
+test('/oauth/jwks.json is not captured by the OAuth routes', async () => {
+  const env = stubAssets({ '/oauth/jwks.json': new Response('{"keys":[]}', {
+    headers: { 'content-type': 'application/json' },
+  }) });
+  const response = await worker.fetch(new Request('https://jaredsburrows.com/oauth/jwks.json'), env);
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), '{"keys":[]}',
+    'the key set is a static asset — the routes are exact matches on the two endpoints');
+});
+
 test('/ is unaffected by the second route', async () => {
   const env = homepage();
   const response = await worker.fetch(new Request('https://jaredsburrows.com/'), env);
