@@ -6,7 +6,7 @@ My blog, presentations, GitHub, and social links.
 [![Build](https://github.com/jaredsburrows/jaredsburrows.com/workflows/build/badge.svg)](https://github.com/jaredsburrows/jaredsburrows.com/actions)
 [![Twitter Follow](https://img.shields.io/twitter/follow/jaredsburrows.svg?style=social)](https://twitter.com/jaredsburrows)
 
-Personal website. Cloudflare Workers serves the repo from its edge; four routes — `/`, `/mcp`, `/oauth/authorize` and `/oauth/token` — also run `src/worker.mts` (see "The Worker"). Everything served is a file committed here — the only compiled output is `static/js/*.js`, built from the `.ts` beside it and committed too (see "Browser scripts").
+Personal website. Cloudflare Workers serves the repo from its edge; five routes — `/`, `/mcp`, `/a2a`, `/oauth/authorize` and `/oauth/token` — also run `src/worker.mts` (see "The Worker"). Everything served is a file committed here — the only compiled output is `static/js/*.js`, built from the `.ts` beside it and committed too (see "Browser scripts").
 
 ### Preview the website
 
@@ -111,6 +111,25 @@ at the card, which is the discovery path SEP-2127 specifies.
 node --test src/mcp.test.mts
 ```
 
+### A2A agent
+
+`/.well-known/agent-card.json` is an [A2A](https://a2a-protocol.org/latest/specification/)
+1.0 Agent Card, and `POST /a2a` is the JSON-RPC endpoint it names. It answers
+`SendMessage` with one Message — a sentence and the same answer as JSON — built
+by the MCP server's own `callTool`, so the two protocols cannot disagree about
+the talks. A message naming a talk id gets that talk; one naming a year gets
+that year's talks; anything else gets the whole list. Nothing creates a task,
+so the task, streaming and push-notification methods return the errors A2A
+defines for them, and a request without `A2A-Version: 1.0` gets
+`VersionNotSupportedError`.
+
+`validate-site.ts` pins the card's URL, binding, protocol version, version and
+skill ids to `src/a2a.mts`, and the URL to `run_worker_first`.
+
+```
+node --test src/a2a.test.mts
+```
+
 ### WebMCP
 
 `static/js/webmcp.ts` registers the MCP server's two tools, `list_talks` and
@@ -192,9 +211,9 @@ that already holds the Markdown homepage gets a 304 rather than the document
 again. The two carry different ETags, so neither one's validator can ever
 produce a 304 for the other.
 
-`assets.run_worker_first` in `wrangler.jsonc` scopes it to four paths — `/`,
-`/mcp`, and the two OAuth endpoints (see "OAuth metadata") — and
-`assets.binding` is what gives it `env.ASSETS.fetch`. All four are exact
+`assets.run_worker_first` in `wrangler.jsonc` scopes it to five paths — `/`,
+`/mcp`, `/a2a`, and the two OAuth endpoints (see "OAuth metadata") — and
+`assets.binding` is what gives it `env.ASSETS.fetch`. All five are exact
 matches, so `/mcp` does not capture `/mcp/server-card` and `/oauth/token` does
 not capture `/oauth/jwks.json` — both stay static assets. Every other path is matched by Cloudflare's asset router before
 any code runs, so those requests are neither slowed down nor billed as Worker

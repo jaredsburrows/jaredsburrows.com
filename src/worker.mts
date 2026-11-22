@@ -1,8 +1,8 @@
 // Markdown content negotiation for the homepage, and the front door for the MCP
-// server in mcp.mts and the two OAuth endpoints in oauth.mts — the four paths
-// this site runs code on.
+// server in mcp.mts, the A2A endpoint in a2a.mts and the two OAuth endpoints
+// in oauth.mts — the five paths this site runs code on.
 //
-// `assets.run_worker_first` in wrangler.jsonc scopes it to those four: every
+// `assets.run_worker_first` in wrangler.jsonc scopes it to those five: every
 // other path (CSS, JS, images, /index.md itself, /api/*, the card at
 // /mcp/server-card, /oauth/jwks.json, the 404 page) is served by Cloudflare's
 // asset router without ever invoking this script, which is both faster and
@@ -38,6 +38,7 @@
 // The extension is written out because `allowImportingTsExtensions` is set and
 // Node opens the literal path: it does no extension rewriting, and nothing is
 // emitted for it to rewrite to.
+import { handleA2a } from './a2a.mts';
 import { handleMcp } from './mcp.mts';
 import { handleOAuth } from './oauth.mts';
 
@@ -243,6 +244,10 @@ export default {
     // is still served by the asset router and stays unbilled. Verified under
     // `wrangler dev`, not assumed.
     if (url.pathname === '/mcp') return handleMcp(request, env);
+    // The service URL /.well-known/agent-card.json names. Null means "not
+    // /a2a"; the card itself is a static asset and never reaches this script.
+    const a2a = await handleA2a(request, env);
+    if (a2a) return a2a;
     // The two endpoints the OAuth metadata names. Each refuses every request;
     // see oauth.mts for why they exist at all. Null means "not one of mine".
     const refusal = handleOAuth(request);

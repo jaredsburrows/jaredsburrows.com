@@ -1,0 +1,46 @@
+{
+  "name": "Jared Burrows' talks",
+  "description": "Read-only agent over Jared Burrows' conference talks. Send it a message and it replies with the talks, newest first, or with one talk in full when the message names a talk id. It answers every message directly: no tasks, no streaming, no push notifications, and no authentication.",
+  "supportedInterfaces": [
+    {
+      "url": "https://jaredsburrows.com/a2a",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0"
+    }
+  ],
+  "provider": {
+    "organization": "Jared Burrows",
+    "url": "https://jaredsburrows.com"
+  },
+  "version": "1.0.0",
+  "documentationUrl": "https://jaredsburrows.com/llms.txt",
+  "iconUrl": "https://jaredsburrows.com/apple-touch-icon.png",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false,
+    "extendedAgentCard": false
+  },
+  "defaultInputModes": ["text/plain", "application/json"],
+  "defaultOutputModes": ["text/plain", "application/json"],
+  "skills": [
+    {
+      "id": "list-talks",
+      "name": "List talks",
+      "description": "Lists Jared Burrows' conference talks, newest first, with each talk's id, date, title, venue, location and links. A message naming a year, or a data part {\"year\": 2017}, lists only that year's talks.",
+      "tags": ["talks", "conference", "android", "gradle"],
+      "examples": [
+        "What conference talks has Jared Burrows given?",
+        "Which talks did he give in 2017?"
+      ]
+    },
+    {
+      "id": "get-talk",
+      "name": "Get talk",
+      "description": "Returns one talk in full, including its abstract, when the message contains a talk id from list-talks or a data part {\"id\": \"...\"}.",
+      "tags": ["talks", "abstract", "slides", "video"],
+      "examples": [
+        "Tell me about 2017-11-08-the-road-to-single-dex"
+      ]
+    }
+  ]
+}

@@ -1442,6 +1442,111 @@ for (const rule of rules.filter((candidate) => globRegex(candidate.pattern).test
   }
 }
 
+// --- A2A Agent Card: /.well-known/agent-card.json (A2A 1.0, section 8.2). The
+// card is a claim about /a2a, a Worker route with no file behind it, and the
+// claims it makes — the binding, the protocol revision, the version, the
+// skills — are each a constant in src/a2a.mts. Nothing at runtime compares the
+// two, and a card whose skill ids or revision drift from the code reads as a
+// working agent to every client until one calls it. So each is pinned here,
+// along with the route: a card URL that run_worker_first does not send to the
+// Worker is answered by the 404 page.
+const AGENT_CARD = '.well-known/agent-card.json';
+const A2A_SOURCE = 'src/a2a.mts';
+if (!fs.existsSync(path.join(root, AGENT_CARD))) {
+  bad(`${AGENT_CARD} is missing — /a2a has no card, so no agent can discover it`);
+} else {
+  const card = parseJson(AGENT_CARD);
+  const a2aSource = (() => {
+    try {
+      return read(A2A_SOURCE);
+    } catch (error) {
+      bad(`${A2A_SOURCE} is missing, but ${AGENT_CARD} advertises it (${messageOf(error)})`);
+      return '';
+    }
+  })();
+  const a2aConstant = (name: string): string | undefined =>
+    new RegExp(`export const ${name} = '([^']+)'`).exec(a2aSource)?.[1];
+  const skillIds = (() => {
+    const list = /export const SKILL_IDS = \[([^\]]*)\]/.exec(a2aSource);
+    return list ? [...list[1].matchAll(/'([^']+)'/g)].map((match) => match[1]) : [];
+  })();
+
+  if (card) {
+    for (const member of ['name', 'description', 'version']) {
+      if (typeof card[member] !== 'string' || card[member].trim() === '') {
+        bad(`${AGENT_CARD} has no ${member} — A2A requires it`);
+      }
+    }
+    for (const member of ['defaultInputModes', 'defaultOutputModes']) {
+      if (!Array.isArray(card[member]) || card[member].length === 0) {
+        bad(`${AGENT_CARD} has no ${member} — A2A requires a non-empty list`);
+      }
+    }
+    if (card.capabilities === null || typeof card.capabilities !== 'object' || Array.isArray(card.capabilities)) {
+      bad(`${AGENT_CARD} has no capabilities object — A2A requires one`);
+    } else {
+      // Each true capability is a promise /a2a would have to keep; none is kept.
+      for (const capability of ['streaming', 'pushNotifications', 'extendedAgentCard']) {
+        if (card.capabilities[capability] === true) {
+          bad(`${AGENT_CARD} claims capabilities.${capability}, which ${A2A_SOURCE} does not implement`);
+        }
+      }
+    }
+
+    const interfaces = Array.isArray(card.supportedInterfaces) ? card.supportedInterfaces : [];
+    if (interfaces.length === 0) {
+      bad(`${AGENT_CARD} has no supportedInterfaces — a card with no service URL describes an agent no one can call`);
+    }
+    for (const [index, entry] of interfaces.entries()) {
+      const where = `${AGENT_CARD} supportedInterfaces[${index}]`;
+      if (entry?.protocolBinding !== 'JSONRPC') {
+        bad(`${where} protocolBinding is ${JSON.stringify(entry?.protocolBinding)}, but ${A2A_SOURCE} implements the JSONRPC binding only`);
+      }
+      if (entry?.protocolVersion !== a2aConstant('PROTOCOL_VERSION')) {
+        bad(`${where} protocolVersion is ${JSON.stringify(entry?.protocolVersion)}, but ${A2A_SOURCE} implements ${JSON.stringify(a2aConstant('PROTOCOL_VERSION'))} only`);
+      }
+      const route = typeof entry?.url === 'string' ? sameOriginPath(entry.url) : undefined;
+      if (route === undefined || !entry.url.startsWith(`${SITE_ORIGIN}/`)) {
+        bad(`${where} url is ${JSON.stringify(entry?.url)}, which is not an https URL on ${SITE_ORIGIN}`);
+        continue;
+      }
+      if (route !== a2aConstant('A2A_PATH')) {
+        bad(`${where} url names ${route}, but ${A2A_SOURCE} serves ${JSON.stringify(a2aConstant('A2A_PATH'))}`);
+      }
+      if (!workerRoutes.includes(route)) {
+        bad(`${where} url names ${route}, but wrangler.jsonc run_worker_first does not route that path to the Worker — the asset router would answer it with the 404 page`);
+      }
+    }
+
+    if (card.version !== a2aConstant('AGENT_VERSION')) {
+      bad(`${AGENT_CARD} version ${JSON.stringify(card.version)} disagrees with AGENT_VERSION in ${A2A_SOURCE}`);
+    }
+
+    const skills = Array.isArray(card.skills) ? card.skills : [];
+    for (const [index, skill] of skills.entries()) {
+      for (const member of ['id', 'name', 'description']) {
+        if (typeof skill?.[member] !== 'string' || skill[member].trim() === '') {
+          bad(`${AGENT_CARD} skills[${index}] has no ${member} — A2A requires it`);
+        }
+      }
+      if (!Array.isArray(skill?.tags) || skill.tags.length === 0) {
+        bad(`${AGENT_CARD} skills[${index}] has no tags — A2A requires a non-empty list`);
+      }
+    }
+    const cardSkillIds = skills.map((skill: { id?: unknown }) => skill?.id);
+    if (!isDeepStrictEqual(cardSkillIds, skillIds)) {
+      bad(`${AGENT_CARD} lists skills ${JSON.stringify(cardSkillIds)}, but ${A2A_SOURCE} SKILL_IDS is ${JSON.stringify(skillIds)} — the card and the router disagree about what this agent does`);
+    }
+
+    // Same-origin links in the card must be files that exist.
+    for (const member of ['documentationUrl', 'iconUrl']) {
+      if (typeof card[member] === 'string' && sameOriginPath(card[member]) !== undefined) {
+        checkLocal(AGENT_CARD, card[member]);
+      }
+    }
+  }
+}
+
 // --- _redirects: well-formed lines. Cloudflare consumes this file and issues
 // the 301 before any asset is served, so a source needs no file behind it.
 for (const line of redirects.split('\n')) {
@@ -1458,4 +1563,4 @@ if (errors.length > 0) {
   for (const message of errors) console.error(`  - ${message}`);
   process.exit(1);
 }
-console.log('✓ site invariants hold (CSP parity + coverage, id contract, file references, JSON-LD, auth.md discovery, markdown twin, llms.txt index, API catalog, ARD manifest, MCP server card, agent skills index, OAuth metadata, _headers overlap, / stays uncacheable, _redirects syntax)');
+console.log('✓ site invariants hold (CSP parity + coverage, id contract, file references, JSON-LD, auth.md discovery, markdown twin, llms.txt index, API catalog, ARD manifest, MCP server card, agent skills index, OAuth metadata, A2A agent card, _headers overlap, / stays uncacheable, _redirects syntax)');

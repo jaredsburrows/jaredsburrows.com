@@ -359,6 +359,16 @@ test('/mcp is handed to the MCP server, not the asset router', async () => {
   assert.equal(env.requests.length, 0, '/mcp must never reach the asset router');
 });
 
+test('/a2a is handed to the A2A endpoint, not the asset router', async () => {
+  const env = homepage();
+  const response = await worker.fetch(new Request('https://jaredsburrows.com/a2a', {
+    method: 'OPTIONS',
+  }), env);
+  assert.equal(response.status, 204, 'the A2A preflight, not a 404 from the assets stub');
+  assert.match(response.headers.get('access-control-allow-headers') ?? '', /A2A-Version/);
+  assert.equal(env.requests.length, 0, '/a2a must never reach the asset router');
+});
+
 test('/mcp/server-card is not captured by the /mcp route', async () => {
   const env = stubAssets({ '/mcp/server-card': new Response('{}', {
     headers: { 'content-type': 'application/mcp-server-card+json' },

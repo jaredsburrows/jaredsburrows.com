@@ -26,6 +26,9 @@ authentication, no user data and no write surface.
 - [Agent manifest](https://jaredsburrows.com/.well-known/ard.json): everything
   this origin offers an agent, in one file. Served byte-identically at
   [/.well-known/ai-catalog.json](https://jaredsburrows.com/.well-known/ai-catalog.json).
+- [A2A Agent Card](https://jaredsburrows.com/.well-known/agent-card.json): an
+  A2A 1.0 agent at `/a2a` that answers a message with the talks, or with one
+  talk when the message names its id.
 - [Agent skills](https://jaredsburrows.com/.well-known/agent-skills/index.json):
   the discovery index for the one skill this origin publishes — how to look up
   the talks — with a SHA-256 digest of the file it points at.
