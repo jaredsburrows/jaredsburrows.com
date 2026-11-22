@@ -1500,5 +1500,80 @@ for (const name of [OAUTH_RESOURCE, OAUTH_SERVER]) {
 }
 
 
+// --- A2A Agent Card. Every claim it makes about /a2a is a constant in
+// src/a2a.mts, and the route has to reach the Worker.
+const AGENT_CARD = '.well-known/agent-card.json';
+const originalAgentCard = fs.readFileSync(path.join(repoRoot, AGENT_CARD), 'utf8');
+const originalA2aSource = fs.readFileSync(path.join(repoRoot, 'src/a2a.mts'), 'utf8');
+assert.ok(originalWrangler.includes(', "/a2a"'), 'fixture assumption broken: wrangler.jsonc no longer routes "/a2a"');
+const withCard = (mutate: (card: any) => void): Record<string, string> => {
+  const card = JSON.parse(originalAgentCard);
+  mutate(card);
+  return { [AGENT_CARD]: `${JSON.stringify(card, null, 2)}\n` };
+};
+
+testFiles('a missing agent card fails the build',
+  { [AGENT_CARD]: null },
+  1, `${AGENT_CARD} is missing`);
+
+testFiles('an agent card that is not valid JSON fails the build',
+  { [AGENT_CARD]: originalAgentCard.replace(/\}\s*$/, '') },
+  1, `${AGENT_CARD} is not valid JSON`);
+
+for (const member of ['name', 'description', 'version']) {
+  testFiles(`an agent card with no ${member} fails the build`,
+    withCard((card) => { delete card[member]; }),
+    1, `${AGENT_CARD} has no ${member}`);
+}
+
+testFiles('an agent card with no supportedInterfaces fails the build',
+  withCard((card) => { card.supportedInterfaces = []; }),
+  1, 'has no supportedInterfaces');
+
+testFiles('a card URL the Worker is not routed for fails the build',
+  { 'wrangler.jsonc': originalWrangler.replace(', "/a2a"', '') },
+  1, 'url names /a2a, but wrangler.jsonc run_worker_first does not route that path');
+
+testFiles('a card URL renamed in the card alone fails the build',
+  withCard((card) => { card.supportedInterfaces[0].url = 'https://jaredsburrows.com/a2a/v1'; }),
+  1, ['url names /a2a/v1, but src/a2a.mts serves "/a2a"', 'run_worker_first does not route that path']);
+
+testFiles('a card URL on another origin fails the build',
+  withCard((card) => { card.supportedInterfaces[0].url = 'https://agent.example.com/a2a'; }),
+  1, 'which is not an https URL on');
+
+testFiles('a binding the server does not speak fails the build',
+  withCard((card) => { card.supportedInterfaces[0].protocolBinding = 'GRPC'; }),
+  1, 'implements the JSONRPC binding only');
+
+testFiles('a protocol revision the server does not implement fails the build',
+  withCard((card) => { card.supportedInterfaces[0].protocolVersion = '0.3'; }),
+  1, 'protocolVersion is "0.3"');
+
+testFiles('a card version that drifts from AGENT_VERSION fails the build',
+  withCard((card) => { card.version = '2.0.0'; }),
+  1, 'disagrees with AGENT_VERSION');
+
+testFiles('a skill the router does not know fails the build',
+  withCard((card) => { card.skills.push({ id: 'search-talks', name: 'Search', description: 'x', tags: ['x'] }); }),
+  1, 'the card and the router disagree');
+
+testFiles('a skill renamed in src/a2a.mts alone fails the build',
+  { 'src/a2a.mts': originalA2aSource.replace("'get-talk'] as const", "'talk'] as const") },
+  1, 'the card and the router disagree');
+
+testFiles('a skill with no tags fails the build',
+  withCard((card) => { delete card.skills[0].tags; }),
+  1, 'skills[0] has no tags');
+
+testFiles('claiming streaming fails the build',
+  withCard((card) => { card.capabilities.streaming = true; }),
+  1, 'claims capabilities.streaming');
+
+testFiles('a card icon this site does not serve fails the build',
+  withCard((card) => { card.iconUrl = 'https://jaredsburrows.com/static/image/agent.png'; }),
+  1, 'references missing file https://jaredsburrows.com/static/image/agent.png');
+
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

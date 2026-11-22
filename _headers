@@ -88,6 +88,16 @@
 /.well-known/agent-skills/*
   Access-Control-Allow-Origin: *
 
+# A2A Agent Card (A2A 1.0, section 8.2). No Content-Type rule: .json infers
+# application/json, and the spec names no other type for the card. The spec's
+# SHOULD is a Cache-Control with max-age, and the one-hour TTL the other JSON
+# here gets is short enough that a card and the /a2a code it describes converge
+# within the hour of a deploy. Access-Control-Allow-Origin for browser-based
+# agents. /* sets neither header, so nothing joins.
+/.well-known/agent-card.json
+  Cache-Control: public, max-age=3600
+  Access-Control-Allow-Origin: *
+
 # OAuth metadata: RFC 9728 for the resource, RFC 8414 for the authorization
 # server. Neither well-known path has an extension, so like the api-catalog
 # above Cloudflare infers no type for them at all, and both RFCs make
