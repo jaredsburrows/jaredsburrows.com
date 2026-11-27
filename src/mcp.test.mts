@@ -488,6 +488,57 @@ test('readBodyWithin counts bytes, not characters', async () => {
   assert.equal(await readBodyWithin(new Request('https://jaredsburrows.com/mcp', { method: 'POST' }), 65536), '');
 });
 
+/** A body delivered as exactly these chunks, recording whether it was cancelled or read at all. */
+const chunkedBody = (chunks: Uint8Array[], headers: Record<string, string> = {}) => {
+  const probe = { pulls: 0, cancelled: false };
+  let next = 0;
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      probe.pulls += 1;
+      if (next < chunks.length) controller.enqueue(chunks[next++]);
+      else controller.close();
+    },
+    cancel() {
+      probe.cancelled = true;
+    },
+  }, { highWaterMark: 0 });
+  const request = new Request('https://jaredsburrows.com/mcp', { method: 'POST', headers, body: stream, duplex: 'half' });
+  return { request, probe };
+};
+
+test('readBodyWithin decodes a character split across chunks', async () => {
+  // A 3-byte and a 4-byte character: every cut point lands inside one of them somewhere.
+  const text = 'a\u20acb\u{1d11e}c';
+  const bytes = new TextEncoder().encode(text);
+  for (let cut = 1; cut < bytes.length; cut++) {
+    const { request } = chunkedBody([bytes.slice(0, cut), bytes.slice(cut)]);
+    assert.equal(await readBodyWithin(request, 100), text, `cut at byte ${cut}`);
+  }
+  const { request } = chunkedBody([...bytes].map((byte) => new Uint8Array([byte])));
+  assert.equal(await readBodyWithin(request, 100), text, 'one byte per chunk');
+});
+
+test('readBodyWithin ignores a malformed Content-Length and reads the body', async () => {
+  for (const value of ['-5', 'abc', '', '12.5', '+4', '1e9']) {
+    const request = new Request('https://jaredsburrows.com/mcp', {
+      method: 'POST', body: 'hello', headers: { 'content-length': value },
+    });
+    assert.equal(await readBodyWithin(request, 10), 'hello', `content-length ${JSON.stringify(value)}`);
+  }
+});
+
+test('readBodyWithin still caps a body whose Content-Length understates it', async () => {
+  const { request, probe } = chunkedBody([new Uint8Array(20).fill(0x41)], { 'content-length': '1' });
+  assert.equal(await readBodyWithin(request, 10), null);
+  assert.equal(probe.cancelled, true);
+});
+
+test('readBodyWithin refuses a Content-Length too large for a safe integer without reading', async () => {
+  const { request, probe } = chunkedBody([new Uint8Array(1).fill(0x41)], { 'content-length': '9'.repeat(40) });
+  assert.equal(await readBodyWithin(request, 10), null);
+  assert.equal(probe.pulls, 0);
+});
+
 test('a malformed body is a parse error', async () => {
   const response = await handleMcp(
     post(null, { raw: '{not json', headers: { 'mcp-method': 'tools/list' } }), stubAssets());
