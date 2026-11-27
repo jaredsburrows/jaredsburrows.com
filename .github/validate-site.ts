@@ -1289,6 +1289,19 @@ if (!homepageRule) {
   }
 }
 
+// --- The HTML pages served at exact paths state their charset (SECURITY.md
+// S46). Without the rule Cloudflare infers a bare text/html; an explicit
+// Content-Type replaces that rather than joining with it. Byte-exact: a
+// different casing or spacing is legal HTTP, but this is the one line the
+// file is meant to hold, and comparing it whole leaves nothing to parse.
+const HTML_CONTENT_TYPE = 'Content-Type: text/html; charset=utf-8';
+for (const htmlPath of ['/', '/api/']) {
+  const rule = headerRuleValues(htmlPath);
+  if (!rule?.includes(HTML_CONTENT_TYPE)) {
+    bad(`_headers "${htmlPath}" rule does not set "${HTML_CONTENT_TYPE}" — without it the page is served as text/html with no charset`);
+  }
+}
+
 // --- /llms.txt, the link index described by llmstxt.org. Where index.md is a
 // copy of the homepage, this file restates no content at all: it is nothing but
 // links to the documents the rest of this tree serves — and that is exactly what
@@ -1603,4 +1616,4 @@ if (errors.length > 0) {
   for (const message of errors) console.error(`  - ${message}`);
   process.exit(1);
 }
-console.log('✓ site invariants hold (CSP parity + coverage, id contract, file references, JSON-LD, auth.md discovery, markdown twin, llms.txt index, API catalog, ARD manifest, MCP server card, agent skills index, OAuth metadata, A2A agent card, _headers overlap, COOP, / stays uncacheable, _redirects syntax)');
+console.log('✓ site invariants hold (CSP parity + coverage, id contract, file references, JSON-LD, auth.md discovery, markdown twin, llms.txt index, API catalog, ARD manifest, MCP server card, agent skills index, OAuth metadata, A2A agent card, HTML charset, _headers overlap, COOP, / stays uncacheable, _redirects syntax)');
