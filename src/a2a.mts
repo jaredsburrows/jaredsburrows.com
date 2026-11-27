@@ -20,7 +20,7 @@
 // The extension is .mts for the reason worker.mts gives. Nothing here imports a
 // `cloudflare:` module, so the test beside it runs this same code under Node.
 
-import { callTool, loadTalks, talkId } from './mcp.mts';
+import { callTool, loadTalks, readBodyWithin, talkId } from './mcp.mts';
 import type { Env } from './mcp.mts';
 
 /** The path the card's `supportedInterfaces[0].url` names. */
@@ -60,7 +60,12 @@ const REASON: Record<number, string> = {
   [VERSION_NOT_SUPPORTED]: 'VERSION_NOT_SUPPORTED',
 };
 
-/** Bounds the work one anonymous POST can cause on a metered account. */
+/**
+ * The largest request body read, in bytes. readBodyWithin enforces it while
+ * the body arrives, so a larger one is refused without ever being held in
+ * memory: this bounds the work one anonymous POST can cause on a metered
+ * account.
+ */
 const MAX_BODY_BYTES = 65536;
 
 /** The 4-digit year a text message may name, for list-talks. */
@@ -288,8 +293,8 @@ export async function handleA2a(request: Request, env: Env): Promise<Response | 
     return rpcError(null, { code: INVALID_REQUEST, message: 'The A2A endpoint accepts application/json only.' }, 415);
   }
 
-  const text = await request.text();
-  if (new TextEncoder().encode(text).length > MAX_BODY_BYTES) {
+  const text = await readBodyWithin(request, MAX_BODY_BYTES);
+  if (text === null) {
     return rpcError(null, { code: INVALID_REQUEST, message: `Request bodies are limited to ${MAX_BODY_BYTES} bytes.` }, 413);
   }
 
