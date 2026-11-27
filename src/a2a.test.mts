@@ -187,6 +187,63 @@ test('transport: preflight, method, media type, size and parse errors', async ()
   assert.equal(parse.response.headers.get('cache-control'), 'no-store');
 });
 
+/**
+ * A body that yields 1 KiB chunks for as long as anyone reads it, and records
+ * how far it was read. Endless on purpose: a handler that buffered it would
+ * never return, so a passing test proves the read stopped.
+ */
+const endlessBody = () => {
+  const probe = { pulls: 0, cancelled: false };
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      probe.pulls += 1;
+      controller.enqueue(new Uint8Array(1024).fill(0x20));
+    },
+    cancel() {
+      probe.cancelled = true;
+    },
+  }, { highWaterMark: 0 });
+  return { stream, probe };
+};
+
+const postStream = (stream: ReadableStream<Uint8Array>, headers: Record<string, string> = {}): Request =>
+  new Request(`https://jaredsburrows.com${A2A_PATH}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'a2a-version': PROTOCOL_VERSION, ...headers },
+    body: stream,
+    duplex: 'half',
+  });
+
+test('size: a declared Content-Length over the cap is refused without reading the body', async () => {
+  const { stream, probe } = endlessBody();
+  const { status, body, response } = await call(postStream(stream, { 'content-length': '65537' }));
+  assert.equal(status, 413);
+  assert.equal(body.error.code, -32600);
+  assert.equal(body.id, null);
+  assert.equal(response.headers.get('access-control-allow-origin'), '*');
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(probe.pulls, 0, 'the header alone decides; no byte of the body is read');
+});
+
+test('size: a chunked body past the cap is cancelled as it streams, not buffered', async () => {
+  const { stream, probe } = endlessBody();
+  const { status, body } = await call(postStream(stream));
+  assert.equal(status, 413);
+  assert.equal(body.error.code, -32600);
+  assert.equal(probe.cancelled, true);
+  assert.equal(probe.pulls, 65, '64 chunks fill the cap exactly; the 65th crosses it');
+});
+
+test('size: a body of exactly the cap is accepted', async () => {
+  const message = rpc('SendMessage', { message: userMessage([{ text: 'talks' }]) });
+  const base = JSON.stringify({ ...message, padding: '' });
+  const exact = JSON.stringify({ ...message, padding: ' '.repeat(65536 - base.length) });
+  assert.equal(new TextEncoder().encode(exact).length, 65536);
+  const { status, body } = await call(post(exact, { 'content-length': '65536' }));
+  assert.equal(status, 200);
+  assert.equal(body.error, undefined);
+});
+
 test('any other path is not this module', async () => {
   assert.equal(await handleA2a(new Request('https://jaredsburrows.com/a2a/v1', { method: 'POST' }), env), null);
   assert.equal(await handleA2a(new Request('https://jaredsburrows.com/.well-known/agent-card.json'), env), null);
