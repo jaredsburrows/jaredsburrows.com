@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { talkId, loadTalks, TOOLS, callTool, talkSummary, decodeHeaderValue, dispatch, handleMcp,
+import { talkId, loadTalks, TOOLS, callTool, talkSummary, decodeHeaderValue, dispatch, handleMcp, readBodyWithin,
          PROTOCOL_VERSION, SERVER_NAME, SERVER_VERSION } from './mcp.mts';
 import type { ToolResult, TalkSummary, TalkDetail, Env, RpcError } from './mcp.mts';
 
@@ -415,6 +415,77 @@ test('an oversized body is refused before it is parsed', async () => {
     headers: { 'mcp-method': 'tools/list' },
   }), stubAssets());
   assert.equal(response.status, 413);
+});
+
+/**
+ * A body that yields 1 KiB chunks for as long as anyone reads it, and records
+ * how far it was read. Endless on purpose: a handler that buffered it would
+ * never return, so a passing test proves the read stopped.
+ */
+const endlessBody = () => {
+  const probe = { pulls: 0, cancelled: false };
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      probe.pulls += 1;
+      controller.enqueue(new Uint8Array(1024).fill(0x20));
+    },
+    cancel() {
+      probe.cancelled = true;
+    },
+  }, { highWaterMark: 0 });
+  return { stream, probe };
+};
+
+const postStream = (stream: ReadableStream<Uint8Array>, headers: Record<string, string> = {}): Request =>
+  new Request('https://jaredsburrows.com/mcp', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'mcp-protocol-version': PROTOCOL_VERSION,
+      'mcp-method': 'tools/list',
+      ...headers,
+    },
+    body: stream,
+    duplex: 'half',
+  });
+
+test('a declared Content-Length over the cap is refused without reading the body', async () => {
+  const { stream, probe } = endlessBody();
+  const response = await handleMcp(postStream(stream, { 'content-length': '65537' }), stubAssets());
+  assert.equal(response.status, 413);
+  assert.equal(response.headers.get('access-control-allow-origin'), '*');
+  const payload = (await response.json()) as Payload;
+  assert.equal(payload.error.code, -32600);
+  assert.equal('id' in payload, false);
+  assert.equal(probe.pulls, 0, 'the header alone decides; no byte of the body is read');
+});
+
+test('a chunked body past the cap is cancelled as it streams, not buffered', async () => {
+  const { stream, probe } = endlessBody();
+  const response = await handleMcp(postStream(stream), stubAssets());
+  assert.equal(response.status, 413);
+  assert.equal(((await response.json()) as Payload).error.code, -32600);
+  assert.equal(probe.cancelled, true);
+  assert.equal(probe.pulls, 65, '64 chunks fill the cap exactly; the 65th crosses it');
+});
+
+test('a body of exactly the cap is accepted', async () => {
+  const base = JSON.stringify({ ...rpc('tools/list'), padding: '' });
+  const raw = JSON.stringify({ ...rpc('tools/list'), padding: ' '.repeat(65536 - base.length) });
+  assert.equal(new TextEncoder().encode(raw).length, 65536);
+  const response = await handleMcp(post(null, {
+    raw,
+    headers: { 'mcp-method': 'tools/list', 'content-length': '65536' },
+  }), stubAssets());
+  assert.equal(response.status, 200);
+});
+
+test('readBodyWithin counts bytes, not characters', async () => {
+  const request = (body: string) => new Request('https://jaredsburrows.com/mcp', { method: 'POST', body });
+  // 32,769 two-byte characters: under the cap by length, 65,538 bytes on the wire.
+  assert.equal(await readBodyWithin(request('\u00e9'.repeat(32769)), 65536), null);
+  assert.equal(await readBodyWithin(request('\u00e9'.repeat(32768)), 65536), '\u00e9'.repeat(32768));
+  assert.equal(await readBodyWithin(new Request('https://jaredsburrows.com/mcp', { method: 'POST' }), 65536), '');
 });
 
 test('a malformed body is a parse error', async () => {
