@@ -39,11 +39,25 @@
 # it here also means / keeps varying if the Worker is ever rolled back. It is
 # the only Vary in the file, so nothing joins with it, and the Worker appends to
 # an existing value rather than repeating it.
+#
+# Content-Type because the inferred one is a bare text/html with no charset.
+# The pages declare <meta charset="utf-8"> early enough that decoding is already
+# deterministic, but the header is what a client reads first. As with the
+# api-catalog below, an explicit Content-Type replaces the inferred type rather
+# than joining with it. It reaches / through the Worker's HTML branch, which
+# copies the asset router's headers; the markdown branch fetches /index.md,
+# which this exact rule does not match, and states its own type. /api/ gets the
+# same line for the same reason. 404.html cannot be targeted by path and keeps
+# relying on its meta tag.
 /
   Link: </static/css/home.css>; rel=preload; as=style
   Link: </static/image/avatar.webp>; rel=preload; as=image
   Link: </.well-known/api-catalog>; rel="api-catalog"
   Vary: Accept
+  Content-Type: text/html; charset=utf-8
+
+/api/
+  Content-Type: text/html; charset=utf-8
 
 # Talk data and its OpenAPI description change about as often as the talks do,
 # so they get the same one-hour TTL as the other unversioned code assets.
