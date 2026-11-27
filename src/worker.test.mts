@@ -412,3 +412,18 @@ test('/ is unaffected by the second route', async () => {
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('content-type'), 'text/html; charset=utf-8');
 });
+
+// SECURITY.md S47: COOP is set only in _headers, on /*, which the asset router
+// applies to both /index.md and /. The Worker builds neither header set from
+// scratch, so it must carry the binding's value through on both branches.
+test('Cross-Origin-Opener-Policy from _headers survives both representations of /', async () => {
+  const coop = { 'cross-origin-opener-policy': 'same-origin' };
+  const env = () => stubAssets({
+    '/': new Response('<!DOCTYPE html>', { headers: { 'content-type': 'text/html; charset=utf-8', ...coop } }),
+    '/index.md': new Response('# Jared Burrows\n', { headers: { 'content-type': 'text/markdown; charset=utf-8', ...coop } }),
+  });
+  for (const accept of ['text/html', 'text/markdown']) {
+    const response = await worker.fetch(new Request('https://jaredsburrows.com/', { headers: { accept } }), env());
+    assert.equal(response.headers.get('cross-origin-opener-policy'), 'same-origin', `Accept: ${accept}`);
+  }
+});

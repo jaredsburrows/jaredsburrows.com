@@ -916,6 +916,33 @@ testFiles('dropping Vary: Accept from the "/" rule fails closed',
 testFiles('Vary listing Accept alongside another field passes',
   { '_headers': originalHeaders.replace('Vary: Accept', 'Vary: Accept, Accept-Encoding') }, 0);
 
+// --- S47: COOP on every page, and never its two siblings.
+const COOP_LINE = '  Cross-Origin-Opener-Policy: same-origin\n';
+assert.equal(originalHeaders.split(COOP_LINE).length, 2,
+  'fixture assumption broken: _headers no longer sets Cross-Origin-Opener-Policy: same-origin exactly once');
+assert.ok(originalHeaders.includes('\n/\n'),
+  'fixture assumption broken: _headers no longer has a "/" rule to move COOP onto');
+
+testFiles('dropping COOP from the "/*" rule fails closed',
+  { '_headers': originalHeaders.replace(COOP_LINE, '') },
+  1, 'must set Cross-Origin-Opener-Policy: same-origin');
+
+// same-origin-allow-popups keeps the opener for windows this site opens, which
+// is a weaker policy than S47 asked for, not an equivalent spelling.
+testFiles('a weaker COOP value fails closed',
+  { '_headers': originalHeaders.replace(COOP_LINE, '  Cross-Origin-Opener-Policy: same-origin-allow-popups\n') },
+  1, 'must set Cross-Origin-Opener-Policy: same-origin');
+
+testFiles('COOP moved off "/*" onto "/" alone fails closed',
+  { '_headers': originalHeaders.replace(COOP_LINE, '').replace('\n/\n', '\n/\n  Cross-Origin-Opener-Policy: same-origin\n') },
+  1, 'must set Cross-Origin-Opener-Policy: same-origin');
+
+for (const header of ['Cross-Origin-Embedder-Policy: require-corp', 'Cross-Origin-Resource-Policy: same-origin']) {
+  testFiles(`${header} on "/*" fails closed`,
+    { '_headers': originalHeaders.replace(COOP_LINE, `${COOP_LINE}  ${header}\n`) },
+    1, `sets ${header.split(':')[0]}`);
+}
+
 // --- S2: and the half Vary cannot cover. Cloudflare's cache keys on the URL
 // and Accept-Encoding only — it ignores Vary for every other request header —
 // so with two representations on one URL the sole thing keeping markdown out of

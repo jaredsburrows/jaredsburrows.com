@@ -1375,6 +1375,31 @@ for (let i = 0; i < rules.length; i += 1) {
   }
 }
 
+// --- _headers: every page gets its own browsing context group (SECURITY.md
+// S47). Cross-Origin-Opener-Policy: same-origin severs window.opener in both
+// directions, so a cross-origin page that opens or is opened by this site cannot
+// navigate it or read its window. Nothing here needs the link: no page calls
+// window.open or reads window.opener, and outbound links are rel=noopener. It is
+// on /*, which the asset router applies to every asset — the Worker's / responses
+// included, since both of its branches re-wrap a binding response's headers.
+// Its two siblings stay off on purpose: Cross-Origin-Embedder-Policy:
+// require-corp blocks the YouTube and Speaker Deck iframes and the speakerd.s3
+// thumbnails, and Cross-Origin-Resource-Policy would block the cross-site <img>
+// of the avatar and icon that the agent card and Open Graph metadata publish
+// for others to load. The site needs no cross-origin isolation.
+const siteWideRule = rules.find((rule) => rule.pattern === '/*');
+const openerPolicy = siteWideRule?.set.filter(({ name }) => name.toLowerCase() === 'cross-origin-opener-policy') ?? [];
+if (openerPolicy.length !== 1 || openerPolicy[0].value !== 'same-origin') {
+  bad('_headers "/*" rule must set Cross-Origin-Opener-Policy: same-origin exactly once (SECURITY.md S47)');
+}
+for (const rule of rules) {
+  for (const { name } of rule.set) {
+    if (['cross-origin-embedder-policy', 'cross-origin-resource-policy'].includes(name.toLowerCase())) {
+      bad(`_headers rule ${rule.pattern} sets ${name} — it would block the talk embeds, the S3 thumbnails or the published avatar and icon (SECURITY.md S47)`);
+    }
+  }
+}
+
 // --- _headers: / is content-negotiated, so it must never be given a TTL.
 // Two representations share one URL (src/worker.mts answers Accept:
 // text/markdown with index.md, everything else with the HTML), and Vary does
@@ -1563,4 +1588,4 @@ if (errors.length > 0) {
   for (const message of errors) console.error(`  - ${message}`);
   process.exit(1);
 }
-console.log('✓ site invariants hold (CSP parity + coverage, id contract, file references, JSON-LD, auth.md discovery, markdown twin, llms.txt index, API catalog, ARD manifest, MCP server card, agent skills index, OAuth metadata, A2A agent card, _headers overlap, / stays uncacheable, _redirects syntax)');
+console.log('✓ site invariants hold (CSP parity + coverage, id contract, file references, JSON-LD, auth.md discovery, markdown twin, llms.txt index, API catalog, ARD manifest, MCP server card, agent skills index, OAuth metadata, A2A agent card, _headers overlap, COOP, / stays uncacheable, _redirects syntax)');
