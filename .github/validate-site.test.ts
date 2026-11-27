@@ -916,6 +916,38 @@ testFiles('dropping Vary: Accept from the "/" rule fails closed',
 testFiles('Vary listing Accept alongside another field passes',
   { '_headers': originalHeaders.replace('Vary: Accept', 'Vary: Accept, Accept-Encoding') }, 0);
 
+// --- S46: / and /api/ are served with an explicit charset. Asserted on the
+// real file first, so a fixture edit cannot make the mutations below vacuous.
+const HTML_CONTENT_TYPE = '  Content-Type: text/html; charset=utf-8';
+const API_INDEX_RULE = `\n/api/\n${HTML_CONTENT_TYPE}\n`;
+assert.ok(/\n\/\n(?: {2}.+\n)*? {2}Content-Type: text\/html; charset=utf-8\n/.test(originalHeaders),
+  'fixture assumption broken: the _headers "/" rule no longer sets Content-Type: text/html; charset=utf-8');
+assert.ok(originalHeaders.includes(API_INDEX_RULE),
+  'fixture assumption broken: _headers no longer has an exact /api/ rule with the charset');
+assert.strictEqual(originalHeaders.split(HTML_CONTENT_TYPE).length - 1, 2,
+  'fixture assumption broken: _headers sets the HTML Content-Type somewhere other than / and /api/');
+
+testFiles('dropping the charset Content-Type from the "/" rule fails closed',
+  { '_headers': originalHeaders.replace(`  Vary: Accept\n${HTML_CONTENT_TYPE}\n`, '  Vary: Accept\n') },
+  1, '"/" rule does not set "Content-Type: text/html; charset=utf-8"');
+
+testFiles('dropping the /api/ rule fails closed',
+  { '_headers': originalHeaders.replace(API_INDEX_RULE, '\n') },
+  1, '"/api/" rule does not set "Content-Type: text/html; charset=utf-8"');
+
+// A bare text/html is exactly what Cloudflare already infers, so it must not
+// count as the fix.
+testFiles('a charset-less Content-Type on /api/ fails closed',
+  { '_headers': originalHeaders.replace(API_INDEX_RULE, '\n/api/\n  Content-Type: text/html\n') },
+  1, '"/api/" rule does not set "Content-Type: text/html; charset=utf-8"');
+
+// The glob is not the exact path: /api/* reaches every JSON file under it, and
+// an HTML type there would mislabel them all.
+testFiles('the charset Content-Type on /api/* instead of /api/ fails closed',
+  { '_headers': originalHeaders.replace(API_INDEX_RULE, '\n')
+    .replace('/api/*\n  Cache-Control: public, max-age=3600', `/api/*\n  Cache-Control: public, max-age=3600\n${HTML_CONTENT_TYPE}`) },
+  1, '"/api/" rule does not set "Content-Type: text/html; charset=utf-8"');
+
 // --- S2: and the half Vary cannot cover. Cloudflare's cache keys on the URL
 // and Accept-Encoding only — it ignores Vary for every other request header —
 // so with two representations on one URL the sole thing keeping markdown out of
