@@ -1380,10 +1380,50 @@ const overlaps = (a: string, b: string) => globRegex(a).test(b.replace(/\*/g, ''
 for (let i = 0; i < rules.length; i += 1) {
   for (let j = i + 1; j < rules.length; j += 1) {
     if (!overlaps(rules[i].pattern, rules[j].pattern)) continue;
+    // Field names are case-insensitive (RFC 9110 5.1), so `cache-control` on
+    // one rule and `Cache-Control` on another still join (SECURITY.md S50).
+    const later = rules[j].names.map((other) => other.toLowerCase());
     for (const name of rules[i].names) {
-      if (rules[j].names.includes(name)) {
+      if (later.includes(name.toLowerCase())) {
         bad(`_headers: ${name} is set by overlapping rules ${rules[i].pattern} and ${rules[j].pattern} — the values would comma-join`);
       }
+    }
+  }
+}
+
+// --- _headers: every page gets its own browsing context group (SECURITY.md
+// S47). Cross-Origin-Opener-Policy: same-origin severs window.opener in both
+// directions, so a cross-origin page that opens or is opened by this site cannot
+// navigate it or read its window. Nothing here needs the link: no page calls
+// window.open or reads window.opener, and outbound links are rel=noopener. It is
+// on /*, which the asset router applies to every asset — the Worker's / responses
+// included, since both of its branches re-wrap a binding response's headers.
+// Its two siblings stay off on purpose: Cross-Origin-Embedder-Policy:
+// require-corp blocks the YouTube and Speaker Deck iframes and the speakerd.s3
+// thumbnails, and Cross-Origin-Resource-Policy would block the cross-site <img>
+// of the avatar and icon that the agent card and Open Graph metadata publish
+// for others to load. The site needs no cross-origin isolation.
+const siteWideRule = rules.find((rule) => rule.pattern === '/*');
+const openerPolicy = siteWideRule?.set.filter(({ name }) => name.toLowerCase() === 'cross-origin-opener-policy') ?? [];
+if (openerPolicy.length !== 1 || openerPolicy[0].value !== 'same-origin') {
+  bad('_headers "/*" rule must set Cross-Origin-Opener-Policy: same-origin exactly once (SECURITY.md S47)');
+}
+// Any other rule setting it would join onto /*'s value: `same-origin,
+// unsafe-none` is not a valid token, so browsers fall back to unsafe-none and
+// S47 is silently undone on those paths (SECURITY.md S50). Checked here, by
+// name alone, because the overlap check above only sees overlaps its sample
+// heuristic finds.
+for (const rule of rules.filter((candidate) => candidate.pattern !== '/*')) {
+  for (const { name } of rule.set) {
+    if (name.toLowerCase() === 'cross-origin-opener-policy') {
+      bad(`_headers rule ${rule.pattern} sets ${name} — only "/*" may set it, or the values join and browsers fall back to unsafe-none (SECURITY.md S50)`);
+    }
+  }
+}
+for (const rule of rules) {
+  for (const { name } of rule.set) {
+    if (['cross-origin-embedder-policy', 'cross-origin-resource-policy'].includes(name.toLowerCase())) {
+      bad(`_headers rule ${rule.pattern} sets ${name} — it would block the talk embeds, the S3 thumbnails or the published avatar and icon (SECURITY.md S47)`);
     }
   }
 }
@@ -1576,4 +1616,4 @@ if (errors.length > 0) {
   for (const message of errors) console.error(`  - ${message}`);
   process.exit(1);
 }
-console.log('✓ site invariants hold (CSP parity + coverage, id contract, file references, JSON-LD, auth.md discovery, markdown twin, llms.txt index, API catalog, ARD manifest, MCP server card, agent skills index, OAuth metadata, A2A agent card, HTML charset, _headers overlap, / stays uncacheable, _redirects syntax)');
+console.log('✓ site invariants hold (CSP parity + coverage, id contract, file references, JSON-LD, auth.md discovery, markdown twin, llms.txt index, API catalog, ARD manifest, MCP server card, agent skills index, OAuth metadata, A2A agent card, HTML charset, _headers overlap, COOP, / stays uncacheable, _redirects syntax)');

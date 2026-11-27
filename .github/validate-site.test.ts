@@ -916,6 +916,56 @@ testFiles('dropping Vary: Accept from the "/" rule fails closed',
 testFiles('Vary listing Accept alongside another field passes',
   { '_headers': originalHeaders.replace('Vary: Accept', 'Vary: Accept, Accept-Encoding') }, 0);
 
+// --- S47: COOP on every page, and never its two siblings.
+const COOP_LINE = '  Cross-Origin-Opener-Policy: same-origin\n';
+assert.equal(originalHeaders.split(COOP_LINE).length, 2,
+  'fixture assumption broken: _headers no longer sets Cross-Origin-Opener-Policy: same-origin exactly once');
+assert.ok(originalHeaders.includes('\n/\n'),
+  'fixture assumption broken: _headers no longer has a "/" rule to move COOP onto');
+
+testFiles('dropping COOP from the "/*" rule fails closed',
+  { '_headers': originalHeaders.replace(COOP_LINE, '') },
+  1, 'must set Cross-Origin-Opener-Policy: same-origin');
+
+// same-origin-allow-popups keeps the opener for windows this site opens, which
+// is a weaker policy than S47 asked for, not an equivalent spelling.
+testFiles('a weaker COOP value fails closed',
+  { '_headers': originalHeaders.replace(COOP_LINE, '  Cross-Origin-Opener-Policy: same-origin-allow-popups\n') },
+  1, 'must set Cross-Origin-Opener-Policy: same-origin');
+
+testFiles('COOP moved off "/*" onto "/" alone fails closed',
+  { '_headers': originalHeaders.replace(COOP_LINE, '').replace('\n/\n', '\n/\n  Cross-Origin-Opener-Policy: same-origin\n') },
+  1, 'must set Cross-Origin-Opener-Policy: same-origin');
+
+// S50: field names are case-insensitive, so a lowercase spelling on a later
+// rule joins onto /*'s value just the same.
+assert.ok(originalHeaders.includes('\n/api/*\n'),
+  'fixture assumption broken: _headers no longer has an "/api/*" rule to override COOP on');
+testFiles('a lowercase COOP override on "/api/*" fails closed',
+  { '_headers': originalHeaders.replace('\n/api/*\n', '\n/api/*\n  cross-origin-opener-policy: unsafe-none\n') },
+  1, ['only "/*" may set it', 'Cross-Origin-Opener-Policy is set by overlapping rules /* and /api/*']);
+
+testFiles('a lowercase duplicate of another "/*" header fails the overlap check',
+  { '_headers': originalHeaders.replace('\n/api/*\n', '\n/api/*\n  x-content-type-options: nosniff\n') },
+  1, 'X-Content-Type-Options is set by overlapping rules /* and /api/*');
+
+// The same gap on the S46 type: a lowercase content-type on /api/* would join
+// onto the exact /api/ rule's charset type.
+testFiles('a lowercase Content-Type on "/api/*" fails the overlap check against "/api/"',
+  { '_headers': originalHeaders.replace('\n/api/*\n', '\n/api/*\n  content-type: application/json\n') },
+  1, 'is set by overlapping rules /api/ and /api/*');
+
+for (const header of [
+  'Cross-Origin-Embedder-Policy: require-corp',
+  'Cross-Origin-Resource-Policy: same-origin',
+  'cross-origin-embedder-policy: require-corp',
+  'CROSS-ORIGIN-RESOURCE-POLICY: same-site',
+]) {
+  testFiles(`${header} on "/*" fails closed`,
+    { '_headers': originalHeaders.replace(COOP_LINE, `${COOP_LINE}  ${header}\n`) },
+    1, `sets ${header.split(':')[0]}`);
+}
+
 // --- S46: / and /api/ are served with an explicit charset. Asserted on the
 // real file first, so a fixture edit cannot make the mutations below vacuous.
 const HTML_CONTENT_TYPE = '  Content-Type: text/html; charset=utf-8';
