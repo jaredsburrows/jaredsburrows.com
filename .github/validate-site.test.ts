@@ -949,6 +949,12 @@ testFiles('a lowercase duplicate of another "/*" header fails the overlap check'
   { '_headers': originalHeaders.replace('\n/api/*\n', '\n/api/*\n  x-content-type-options: nosniff\n') },
   1, 'X-Content-Type-Options is set by overlapping rules /* and /api/*');
 
+// The same gap on the S46 type: a lowercase content-type on /api/* would join
+// onto the exact /api/ rule's charset type.
+testFiles('a lowercase Content-Type on "/api/*" fails the overlap check against "/api/"',
+  { '_headers': originalHeaders.replace('\n/api/*\n', '\n/api/*\n  content-type: application/json\n') },
+  1, 'is set by overlapping rules /api/ and /api/*');
+
 for (const header of [
   'Cross-Origin-Embedder-Policy: require-corp',
   'Cross-Origin-Resource-Policy: same-origin',
