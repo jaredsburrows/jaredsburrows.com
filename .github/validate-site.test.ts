@@ -937,7 +937,24 @@ testFiles('COOP moved off "/*" onto "/" alone fails closed',
   { '_headers': originalHeaders.replace(COOP_LINE, '').replace('\n/\n', '\n/\n  Cross-Origin-Opener-Policy: same-origin\n') },
   1, 'must set Cross-Origin-Opener-Policy: same-origin');
 
-for (const header of ['Cross-Origin-Embedder-Policy: require-corp', 'Cross-Origin-Resource-Policy: same-origin']) {
+// S50: field names are case-insensitive, so a lowercase spelling on a later
+// rule joins onto /*'s value just the same.
+assert.ok(originalHeaders.includes('\n/api/*\n'),
+  'fixture assumption broken: _headers no longer has an "/api/*" rule to override COOP on');
+testFiles('a lowercase COOP override on "/api/*" fails closed',
+  { '_headers': originalHeaders.replace('\n/api/*\n', '\n/api/*\n  cross-origin-opener-policy: unsafe-none\n') },
+  1, ['only "/*" may set it', 'Cross-Origin-Opener-Policy is set by overlapping rules /* and /api/*']);
+
+testFiles('a lowercase duplicate of another "/*" header fails the overlap check',
+  { '_headers': originalHeaders.replace('\n/api/*\n', '\n/api/*\n  x-content-type-options: nosniff\n') },
+  1, 'X-Content-Type-Options is set by overlapping rules /* and /api/*');
+
+for (const header of [
+  'Cross-Origin-Embedder-Policy: require-corp',
+  'Cross-Origin-Resource-Policy: same-origin',
+  'cross-origin-embedder-policy: require-corp',
+  'CROSS-ORIGIN-RESOURCE-POLICY: same-site',
+]) {
   testFiles(`${header} on "/*" fails closed`,
     { '_headers': originalHeaders.replace(COOP_LINE, `${COOP_LINE}  ${header}\n`) },
     1, `sets ${header.split(':')[0]}`);
